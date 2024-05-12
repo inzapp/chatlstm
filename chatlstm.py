@@ -1,7 +1,7 @@
 """
 Authors : inzapp
 
-Github url : https://github.com/inzapp/chat-lstm
+Github url : https://github.com/inzapp/chatlstm
 
 Copyright (c) 2024 Inzapp
 
