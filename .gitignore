@@ -6,6 +6,7 @@
 *.swp
 *.bak
 *.csv
+*.log
 .idea/
 __pycache__/
 checkpoint/
