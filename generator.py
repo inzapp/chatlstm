@@ -81,8 +81,7 @@ class DataGenerator:
         self.morph_analyzer = konlpy.tag.Okt()
         with open(self.data_path, 'rt', encoding='utf-8') as f:
             reader = csv.reader(f)
-            tqdm_reader = tqdm(reader, total=csv_lines, unit='rows', mininterval=1)
-            for row in tqdm_reader:
+            for row in tqdm(reader, total=csv_lines):
                 assert len(row) >= 2, 'csv must have at least two columns for input and output pair.'
                 q = row[0]
                 a = row[1]
@@ -113,22 +112,22 @@ class DataGenerator:
         for i in range(len(sequences_padded) // 2):
             self.x_datas.append(sequences_padded[i*2])
             self.y_datas.append(sequences_padded[i*2+1])
-        self.x_datas = np.asarray(self.x_datas).astype(np.float32)
-        self.y_datas = np.asarray(self.y_datas).astype(np.float32)
+        self.x_datas = np.asarray(self.x_datas).astype(np.int32)
+        self.y_datas = np.asarray(self.y_datas).astype(np.int32)
         assert len(self.x_datas) == len(self.y_datas)
         self.prepared = True
 
     def load(self):
         indices = np.random.choice(len(self.x_datas), self.batch_size, replace=False)
-        batch_x = np.asarray([self.x_datas[i] for i in indices]).astype(np.float32)
-        batch_y = np.asarray([self.y_datas[i] for i in indices]).astype(np.float32)
+        batch_x = np.asarray([self.x_datas[i] for i in indices]).astype(np.int32)
+        batch_y = np.asarray([self.y_datas[i] for i in indices]).astype(np.int32)
         return batch_x, batch_y
 
     def preprocess(self, nl):
         morphed_nl = self.morph_analyzer.morphs(nl)
         sequence = self.tokenizer.texts_to_sequences(morphed_nl)
         sequence_padded = self.pad_sequences(sequence)
-        x = np.asarray(sequence_padded).astype(np.float32)
+        x = np.asarray(sequence_padded).astype(np.int32)
         return x
 
     def postprocess(self, y):
