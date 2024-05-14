@@ -91,13 +91,13 @@ class ChatLSTM(CheckpointManager):
             self.set_global_seed()
 
         self.model = None
-        self.model_maxlen = 0
-        self.model_vocab_size = 0
+        self.pretrained_maxlen = 0
+        self.pretrained_vocab_size = 0
         if self.pretrained_model_path != '':
             if self.is_model_path_exists(self.pretrained_model_path):
                 self.model = tf.keras.models.load_model(self.pretrained_model_path, compile=False)
                 self.pretrained_iteration_count = self.parse_pretrained_iteration_count(self.pretrained_model_path)
-                self.model_maxlen, self.model_vocab_size = self.get_maxlen_vocab_size_from_model(self.model)
+                self.pretrained_maxlen, self.pretrained_vocab_size = self.get_maxlen_vocab_size_from_model(self.model)
                 print(f'load pretrained model success : {self.pretrained_model_path}')
             else:
                 print(f'pretrained model not found : {self.pretrained_model_path}')
@@ -106,16 +106,16 @@ class ChatLSTM(CheckpointManager):
         self.train_data_generator = DataGenerator(
             data_path=self.train_data_path,
             batch_size=self.batch_size,
-            maxlen=self.model_maxlen,
-            vocab_size=self.model_vocab_size)
+            pretrained_maxlen=self.pretrained_maxlen,
+            pretrained_vocab_size=self.pretrained_vocab_size)
         self.validation_data_generator = DataGenerator(
             data_path=self.validation_data_path,
             batch_size=self.batch_size,
-            maxlen=self.model_maxlen,
-            vocab_size=self.model_vocab_size,
+            pretrained_maxlen=self.pretrained_maxlen,
+            pretrained_vocab_size=self.pretrained_vocab_size,
             evaluate=True)
 
-        self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr)
+        self.optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.lr)
         self.loss_fn = tf.keras.losses.SparseCategoricalCrossentropy()
 
     def set_global_seed(self, seed=42):
@@ -141,32 +141,55 @@ class ChatLSTM(CheckpointManager):
         return model(x, training=False)
 
     def build_model(self, maxlen, vocab_size, embedding_dim, recurrent_units):
-        input_layer = tf.keras.layers.Input(shape=(maxlen,))
-        x = input_layer
-        x = tf.keras.layers.Embedding(input_dim=vocab_size, output_dim=embedding_dim)(x)
+        encoder_input = tf.keras.layers.Input(shape=(maxlen,))
+        encoder_x = encoder_input
+        encoder_x = tf.keras.layers.Embedding(input_dim=vocab_size, output_dim=embedding_dim)(encoder_x)
+        encoder_states = []
         if self.use_gru:
-            x = tf.keras.layers.GRU(units=recurrent_units, return_sequences=True)(x)
+            encoder_x, state_h = tf.keras.layers.GRU(units=recurrent_units, return_state=True)(encoder_x)
+            encoder_states = [state_h]
         else:
-            x = tf.keras.layers.LSTM(units=recurrent_units, return_sequences=True)(x)
-        x = tf.keras.layers.Dense(units=vocab_size, kernel_initializer='glorot_normal', activation='softmax')(x)
-        output_layer = x
-        model = tf.keras.models.Model(input_layer, output_layer)
+            encoder_x, state_h, state_c = tf.keras.layers.LSTM(units=recurrent_units, return_state=True)(encoder_x)
+            encoder_states = [state_h, state_c]
+
+        decoder_input = tf.keras.layers.Input(shape=(maxlen,))
+        decoder_x = decoder_input
+        decoder_x = tf.keras.layers.Embedding(input_dim=vocab_size, output_dim=embedding_dim)(decoder_x)
+        if self.use_gru:
+            decoder_x = tf.keras.layers.GRU(units=recurrent_units)(decoder_x, initial_state=encoder_states)
+        else:
+            decoder_x = tf.keras.layers.LSTM(units=recurrent_units)(decoder_x, initial_state=encoder_states)
+        decoder_x = tf.keras.layers.Dense(units=vocab_size, kernel_initializer='glorot_normal', activation='softmax')(decoder_x)
+
+        output_layer = decoder_x
+        model = tf.keras.models.Model([encoder_input, decoder_input], output_layer)
         return model
 
     def predict(self, model, nl):
-        x = self.train_data_generator.preprocess(nl)
-        output_nl = self.train_data_generator.postprocess(np.array(ChatLSTM.graph_forward(model, x)[0]))
+        encoder_x = self.train_data_generator.preprocess(nl)
+        decoder_x = np.array(self.train_data_generator.get_start_sequence())
+        output_nl = ''
+        for i in range(self.train_data_generator.get_maxlen() - 1):
+            y = self.graph_forward(model, [encoder_x, decoder_x])
+            index, word, end = self.train_data_generator.postprocess(np.array(y[0]))
+            if end:
+                break
+            if i == 0:
+                output_nl = f'{word}'
+            else:
+                output_nl += f' {word}'
+            decoder_x[0][i+1] = index
         return output_nl
 
     def compile(self, model):
         model.compile(optimizer=self.optimizer, loss=self.loss_fn, metrics=['acc'])
 
     def get_maxlen_vocab_size_from_model(self, model):
-        maxlen = model.input_shape[-1]
+        maxlen = model.input_shape[-1][-1]
         vocab_size = model.output_shape[-1]
         return maxlen, vocab_size
 
-    def evaluate(self, dataset='validation', data_path='', chat=False):
+    def evaluate(self, dataset='train', data_path='', chat=False):
         data_generator = None
         if data_path == '':
             assert dataset in ['train', 'validation']
@@ -178,8 +201,8 @@ class ChatLSTM(CheckpointManager):
             data_generator = DataGenerator(
                 data_path=data_path,
                 batch_size=self.batch_sze,
-                maxlen=self.model_maxlen,
-                vocab_size=self.model_vocab_size)
+                pretrained_maxlen=self.pretrained_maxlen,
+                pretrained_vocab_size=self.pretrained_vocab_size)
 
         if chat:
             self.train_data_generator.prepare()
@@ -192,8 +215,7 @@ class ChatLSTM(CheckpointManager):
             data_generator.prepare()
             self.compile(self.model)
             ret = self.model.evaluate(
-                x=data_generator.x_datas,
-                y=data_generator.y_datas,
+                x=data_generator.evaluate_generator(),
                 batch_size=self.batch_size,
                 return_dict=True)
             return ret['acc']

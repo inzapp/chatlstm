@@ -37,18 +37,23 @@ class DataGenerator:
     def __init__(self,
                  data_path,
                  batch_size,
-                 maxlen=0,
-                 vocab_size=0,
+                 pretrained_maxlen=0,
+                 pretrained_vocab_size=0,
                  evaluate=False):
         self.data_path = data_path
         self.batch_size = batch_size
         self.evaluate = evaluate
         self.x_datas = []
         self.y_datas = []
-        self.__maxlen = maxlen
-        self.__vocab_size = vocab_size
+        self.pretrained_maxlen = pretrained_maxlen
+        self.pretrained_vocab_size = pretrained_vocab_size
+        self.__maxlen = 0
+        self.__vocab_size = 0
         self.morph_analyzer = None
         self.tokenizer = None
+        self.start_token = None
+        self.end_token = None
+        self.__start_sequence = None
         self.prepared = False
 
     def is_valid_path(self, path):
@@ -61,6 +66,10 @@ class DataGenerator:
     def get_maxlen(self):
         assert self.prepared
         return self.__maxlen
+
+    def get_start_sequence(self):
+        assert self.prepared
+        return self.__start_sequence
 
     def pad_sequences(self, sequences):
         return tf.keras.preprocessing.sequence.pad_sequences(sequences, maxlen=self.__maxlen, padding='post')
@@ -92,51 +101,82 @@ class DataGenerator:
         self.tokenizer.fit_on_texts(morphed_nls)
         sequences = self.tokenizer.texts_to_sequences(morphed_nls)
 
-        maxlen = 0
+        data_maxlen = 0
         for s in sequences:
-            maxlen = max(maxlen, len(s))
-            if self.__maxlen > 0:
-                assert maxlen <= self.__maxlen, f'data_maxlen({maxlen}) must be lower equal than given maxlen({self.__maxlen})'
-        if self.__maxlen == 0:
-            self.__maxlen = maxlen
+            data_maxlen = max(data_maxlen, len(s))
+            if self.pretrained_maxlen > 0:
+                assert data_maxlen <= self.pretrained_maxlen, f'data_maxlen({data_maxlen}) must be lower equal than given pretrained_maxlen({self.pretrained_maxlen})'
+        self.__maxlen = max(data_maxlen, self.pretrained_maxlen)
 
-        vocab_size = len(self.tokenizer.word_index) + 1
-        if self.__vocab_size == 0:
-            self.__vocab_size = vocab_size
+        data_vocab_size = len(self.tokenizer.index_word) + 3  # 3 for [zero_pad, start_token, end_token]
+        if self.pretrained_vocab_size > 0:
+            assert data_vocab_size <= self.pretrained_vocab_size, 'data_vocab_size({data_vocab_size}) must be lower equal than given pretrained_vocab_size({self.pretrained_vocab_size})'
+            self.__vocab_size = min(data_vocab_size, self.pretrained_vocab_size)
         else:
-            assert vocab_size <= self.__vocab_size, 'data_vocab_size({vocab_size}) must be lower equal than given vocab_size({vocab_size})'
+            self.__vocab_size = data_vocab_size
 
-        self.x_datas = []
-        self.y_datas = []
-        sequences_padded = self.pad_sequences(sequences)
-        for i in range(len(sequences_padded) // 2):
-            self.x_datas.append(sequences_padded[i*2])
-            self.y_datas.append(sequences_padded[i*2+1])
-        self.x_datas = np.asarray(self.x_datas).astype(np.int32)
-        self.y_datas = np.asarray(self.y_datas).astype(np.int32)
-        assert len(self.x_datas) == len(self.y_datas)
+        self.start_token = max(data_vocab_size, self.pretrained_vocab_size) - 2
+        self.end_token = max(data_vocab_size, self.pretrained_vocab_size) - 1
+
+        self.__start_sequence = np.zeros(shape=(1, self.__maxlen), dtype=np.int32)
+        self.__start_sequence[0][0] = self.start_token
+
+        self.x_sequences = []
+        self.y_sequences = []
+        for i in range(len(sequences) // 2):
+            x_sequence = sequences[i*2]
+            y_sequence = sequences[i*2+1]
+            assert len(x_sequence) > 0 and len(y_sequence) > 0, 'sequence length cannot be zero'
+            self.x_sequences.append(x_sequence)
+            self.y_sequences.append(y_sequence)
+        assert len(self.x_sequences) == len(self.y_sequences)
         self.prepared = True
 
     def load(self):
-        indices = np.random.choice(len(self.x_datas), self.batch_size, replace=False)
-        batch_x = np.asarray([self.x_datas[i] for i in indices]).astype(np.int32)
-        batch_y = np.asarray([self.y_datas[i] for i in indices]).astype(np.int32)
-        return batch_x, batch_y
+        assert self.prepared
+        encoder_batch_x, decoder_batch_x, batch_y = [], [], []
+        indices = np.random.choice(len(self.x_sequences), self.batch_size, replace=False)
+        for i in indices:
+            x_sequence = self.x_sequences[i]
+            y_sequence = self.y_sequences[i]
+            encoder_batch_x.append(self.pad_sequences([x_sequence])[0])
+            random_index = np.random.randint(len(y_sequence) + 1)
+            if random_index == 0:
+                decoder_x = [self.start_token]
+                y = y_sequence[0]
+            elif random_index == len(y_sequence):
+                decoder_x = [self.start_token] + y_sequence
+                y = self.end_token
+            else:
+                decoder_x = [self.start_token] + y_sequence[:random_index]
+                y = y_sequence[random_index]
+            decoder_batch_x.append(self.pad_sequences([decoder_x])[0])
+            batch_y.append(y)
+        encoder_batch_x = np.asarray(encoder_batch_x).astype(np.int32)
+        decoder_batch_x = np.asarray(decoder_batch_x).astype(np.int32)
+        batch_y = np.asarray(batch_y).astype(np.int32)
+        return [encoder_batch_x, decoder_batch_x], batch_y
+
+    def evaluate_generator(self):
+        assert self.prepared
+        for _ in range(len(self.x_sequences) // self.batch_size):
+            yield self.load()
 
     def preprocess(self, nl):
+        assert self.prepared
         morphed_nl = self.morph_analyzer.morphs(nl)
-        sequence = self.tokenizer.texts_to_sequences(morphed_nl)
-        sequence_padded = self.pad_sequences(sequence)
+        sequence = self.tokenizer.texts_to_sequences([morphed_nl])[0]
+        sequence_padded = self.pad_sequences([sequence])[0]
         x = np.asarray(sequence_padded).astype(np.int32)
+        x = x.reshape((1,) + x.shape)
         return x
 
     def postprocess(self, y):
-        output_sequences = []
-        for i in range(len(y)):
-            index = np.argmax(y[i])
-            output_sequences.append(index)
-            if index == 0:
-                break
-        nl = self.tokenizer.sequences_to_texts([output_sequences])[0]
-        return nl
+        assert self.prepared
+        index = np.argmax(y)
+        end = index in [0, self.end_token]
+        if end:
+            return 0, '<EOS>', end
+        else:
+            return index, self.tokenizer.index_word[index], end
 
