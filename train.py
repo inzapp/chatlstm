@@ -31,8 +31,8 @@ from chatlstm import TrainingConfig, ChatLSTM
 
 if __name__ == '__main__':
     config = TrainingConfig(
-        train_data_path='/train_data/chatbot/train.csv',
-        validation_data_path='/train_data/chatbot/validation.csv',
+        train_data_path='/train_data/chatbot/train',
+        validation_data_path='/train_data/chatbot/validation',
         model_name='model',
         lr=0.01,
         warm_up=0.1,

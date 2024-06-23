@@ -91,13 +91,13 @@ class ChatLSTM(CheckpointManager):
             self.set_global_seed()
 
         self.model = None
-        self.pretrained_maxlen = 0
+        self.pretrained_model_output_size = 0
         self.pretrained_vocab_size = 0
         if self.pretrained_model_path != '':
             if self.is_model_path_exists(self.pretrained_model_path):
                 self.model = tf.keras.models.load_model(self.pretrained_model_path, compile=False)
                 self.pretrained_iteration_count = self.parse_pretrained_iteration_count(self.pretrained_model_path)
-                self.pretrained_maxlen, self.pretrained_vocab_size = self.get_maxlen_vocab_size_from_model(self.model)
+                self.pretrained_model_output_size, self.pretrained_vocab_size = self.get_output_size_and_vocab_size_from_model(self.model)
                 print(f'load pretrained model success : {self.pretrained_model_path}')
             else:
                 print(f'pretrained model not found : {self.pretrained_model_path}')
@@ -106,12 +106,12 @@ class ChatLSTM(CheckpointManager):
         self.train_data_generator = DataGenerator(
             data_path=self.train_data_path,
             batch_size=self.batch_size,
-            pretrained_maxlen=self.pretrained_maxlen,
+            pretrained_model_output_size=self.pretrained_model_output_size,
             pretrained_vocab_size=self.pretrained_vocab_size)
         self.validation_data_generator = DataGenerator(
             data_path=self.validation_data_path,
             batch_size=self.batch_size,
-            pretrained_maxlen=self.pretrained_maxlen,
+            pretrained_model_output_size=self.pretrained_model_output_size,
             pretrained_vocab_size=self.pretrained_vocab_size,
             evaluate=True)
 
@@ -140,8 +140,8 @@ class ChatLSTM(CheckpointManager):
     def graph_forward(model, x):
         return model(x, training=False)
 
-    def build_model(self, maxlen, vocab_size, embedding_dim, recurrent_units):
-        encoder_input = tf.keras.layers.Input(shape=(maxlen,))
+    def build_model(self, max_sequence_length, vocab_size, embedding_dim, recurrent_units):
+        encoder_input = tf.keras.layers.Input(shape=(max_sequence_length,))
         encoder_x = encoder_input
         encoder_x = tf.keras.layers.Embedding(input_dim=vocab_size, output_dim=embedding_dim)(encoder_x)
         encoder_states = []
@@ -152,7 +152,7 @@ class ChatLSTM(CheckpointManager):
             encoder_x, state_h, state_c = tf.keras.layers.LSTM(units=recurrent_units, return_state=True)(encoder_x)
             encoder_states = [state_h, state_c]
 
-        decoder_input = tf.keras.layers.Input(shape=(maxlen,))
+        decoder_input = tf.keras.layers.Input(shape=(max_sequence_length,))
         decoder_x = decoder_input
         decoder_x = tf.keras.layers.Embedding(input_dim=vocab_size, output_dim=embedding_dim)(decoder_x)
         if self.use_gru:
@@ -166,10 +166,12 @@ class ChatLSTM(CheckpointManager):
         return model
 
     def predict(self, model, nl):
-        encoder_x = self.train_data_generator.preprocess(nl)
-        decoder_x = np.array(self.train_data_generator.get_start_sequence())
+        encoder_x = self.train_data_generator.preprocess(nl, target='sequence_pad')
+        encoder_x = np.asarray(encoder_x).reshape((1,) + encoder_x.shape)
+        decoder_x = self.train_data_generator.tokenizer.get_bos_sequence()
+        decoder_x = np.asarray(decoder_x).reshape((1,) + decoder_x.shape)
         output_nl = ''
-        for i in range(self.train_data_generator.get_maxlen() - 1):
+        for i in range(self.train_data_generator.tokenizer.max_sequence_length - 1):
             y = self.graph_forward(model, [encoder_x, decoder_x])
             index, word, end = self.train_data_generator.postprocess(np.array(y[0]))
             if end:
@@ -184,10 +186,10 @@ class ChatLSTM(CheckpointManager):
     def compile(self, model):
         model.compile(optimizer=self.optimizer, loss=self.loss_fn, metrics=['acc'])
 
-    def get_maxlen_vocab_size_from_model(self, model):
-        maxlen = model.input_shape[-1][-1]
+    def get_output_size_and_vocab_size_from_model(self, model):
+        output_size = model.input_shape[-1][-1]
         vocab_size = model.output_shape[-1]
-        return maxlen, vocab_size
+        return output_size, vocab_size
 
     def evaluate(self, dataset='train', data_path='', chat=False):
         data_generator = None
@@ -201,7 +203,7 @@ class ChatLSTM(CheckpointManager):
             data_generator = DataGenerator(
                 data_path=data_path,
                 batch_size=self.batch_sze,
-                pretrained_maxlen=self.pretrained_maxlen,
+                pretrained_model_output_size=self.pretrained_model_output_size,
                 pretrained_vocab_size=self.pretrained_vocab_size)
 
         if chat:
@@ -229,17 +231,20 @@ class ChatLSTM(CheckpointManager):
         self.train_data_generator.prepare()
         self.validation_data_generator.prepare()
         if self.model is None:
-            data_maxlen = self.train_data_generator.get_maxlen()
-            data_vocab_size = self.train_data_generator.get_vocab_size()
+            data_max_sequence_length = self.train_data_generator.tokenizer.max_sequence_length
+            data_vocab_size = self.train_data_generator.tokenizer.vocab_size
             self.model = self.build_model(
-                maxlen=data_maxlen,
+                max_sequence_length=data_max_sequence_length,
                 vocab_size=data_vocab_size,
                 embedding_dim=self.embedding_dim,
                 recurrent_units=self.recurrent_units)
 
         self.compile(self.model)
         self.model.summary()
-        print(f'\ntrain on {len(self.train_data_generator.x_datas)} x, {len(self.train_data_generator.y_datas)} y samples.')
+        print()
+        print(f'vocab size : {self.train_data_generator.tokenizer.vocab_size}')
+        print(f'max sequence length : {self.train_data_generator.tokenizer.max_sequence_length}')
+        print(f'train on {len(self.train_data_generator.json_paths)} samples.')
         print('start training')
         self.init_checkpoint_dir()
         iteration_count = self.pretrained_iteration_count

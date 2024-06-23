@@ -26,157 +26,154 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 import os
 import csv
+import json
 import konlpy
 import numpy as np
 import tensorflow as tf
 
+from glob import glob
 from tqdm import tqdm
+from tokenizer import Tokenizer
+from concurrent.futures.thread import ThreadPoolExecutor
 
 
 class DataGenerator:
     def __init__(self,
                  data_path,
                  batch_size,
-                 pretrained_maxlen=0,
+                 pretrained_model_output_size=0,
                  pretrained_vocab_size=0,
                  evaluate=False):
         self.data_path = data_path
         self.batch_size = batch_size
         self.evaluate = evaluate
-        self.x_datas = []
-        self.y_datas = []
-        self.pretrained_maxlen = pretrained_maxlen
+        self.pretrained_model_output_size = pretrained_model_output_size
         self.pretrained_vocab_size = pretrained_vocab_size
-        self.__maxlen = 0
-        self.__vocab_size = 0
-        self.morph_analyzer = None
-        self.tokenizer = None
-        self.start_token = None
-        self.end_token = None
-        self.__start_sequence = None
+        self.morph_analyzer = konlpy.tag.Komoran()
+        self.tokenizer = Tokenizer()
+        self.pool = ThreadPoolExecutor(8)
+        self.pad_token_index = None
+        self.bos_token_index = None
+        self.eos_token_index = None
+        self.utterance_sequences_list = None
         self.prepared = False
+        self.json_paths = self.get_json_paths(self.data_path)
+        self.json_index = 0
+        # np.random.shuffle(self.json_paths)
+        assert len(self.json_paths) > 0, f'json data not found : {self.data_path}'
 
-    def is_valid_path(self, path):
-        return os.path.exists(path) and path.lower().endswith('.csv')
+    def get_json_paths(self, data_path):
+        return glob(f'{data_path}/**/*.json', recursive=True)
 
-    def get_vocab_size(self):
-        assert self.prepared
-        return self.__vocab_size
+    def load_json(self, json_path):
+        with open(json_path, mode='rt', encoding='utf-8') as f:
+            d = json.load(f)
+        return d
 
-    def get_maxlen(self):
-        assert self.prepared
-        return self.__maxlen
-
-    def get_start_sequence(self):
-        assert self.prepared
-        return self.__start_sequence
-
-    def pad_sequences(self, sequences):
-        return tf.keras.preprocessing.sequence.pad_sequences(sequences, maxlen=self.__maxlen, padding='post')
+    def split_words(self, nl):
+        return self.morph_analyzer.morphs(nl)
+        # return nl.split()
 
     def prepare(self):
         if self.prepared:
             return
 
-        if not self.is_valid_path(self.data_path):
-            print(f'data path is invalid => [{self.data_path}]')
-            exit(0)
+        fs = []
+        for path in self.json_paths:
+            fs.append(self.pool.submit(self.load_json, path))
+        self.utterance_sequences_list = []
+        for f in tqdm(fs):
+            d = f.result()
+            utterances = d['utterances']
+            if len(utterances) > 1:
+                utterance_length = len(utterances) if len(utterances) % 2 == 0 else len(utterances) - 1
+                utterance_sequences = []
+                for i in range(utterance_length):
+                    nl = utterances[i]['text']
+                    words = self.preprocess(nl, target='words')
+                    self.tokenizer.update(words)
+                    sequence = self.tokenizer.text_to_sequence(words)
+                    utterance_sequences.append(sequence)
+                self.utterance_sequences_list.append(utterance_sequences)
 
-        csv_lines = 0
-        with open(self.data_path, 'rt') as f:
-            csv_lines = len(f.readlines())
+        data_vocab_size = self.tokenizer.vocab_size
+        data_model_output_size = data_vocab_size + 2
+        data_max_sequence_length = self.tokenizer.max_sequence_length
+        if self.pretrained_vocab_size > 0 or self.pretrained_model_output_size > 0:
+            msg = f'pretrained_vocab_size({self.pretrained_vocab_size}) must be equal to data_vocab_size({data_vocab_size})'
+            assert self.pretrained_vocab_size == data_vocab_size, msg
+            msg = f'pretrained_model_output_size({self.pretrained_model_output_size}) must be equal to data_model_output_size({data_model_output_size})'
+            assert self.pretrained_model_output_size == data_max_sequence_length, msg
 
-        morphed_nls = []
-        self.morph_analyzer = konlpy.tag.Okt()
-        with open(self.data_path, 'rt', encoding='utf-8') as f:
-            reader = csv.reader(f)
-            for row in tqdm(reader, total=csv_lines):
-                assert len(row) >= 2, 'csv must have at least two columns for input and output pair.'
-                q = row[0]
-                a = row[1]
-                morphed_nls.append(self.morph_analyzer.morphs(q))
-                morphed_nls.append(self.morph_analyzer.morphs(a))
-
-        self.tokenizer = tf.keras.preprocessing.text.Tokenizer()
-        self.tokenizer.fit_on_texts(morphed_nls)
-        sequences = self.tokenizer.texts_to_sequences(morphed_nls)
-
-        data_maxlen = 0
-        for s in sequences:
-            data_maxlen = max(data_maxlen, len(s))
-            if self.pretrained_maxlen > 0:
-                assert data_maxlen <= self.pretrained_maxlen, f'data_maxlen({data_maxlen}) must be lower equal than given pretrained_maxlen({self.pretrained_maxlen})'
-        self.__maxlen = max(data_maxlen, self.pretrained_maxlen)
-
-        data_vocab_size = len(self.tokenizer.index_word) + 3  # 3 for [zero_pad, start_token, end_token]
-        if self.pretrained_vocab_size > 0:
-            assert data_vocab_size <= self.pretrained_vocab_size, 'data_vocab_size({data_vocab_size}) must be lower equal than given pretrained_vocab_size({self.pretrained_vocab_size})'
-            self.__vocab_size = min(data_vocab_size, self.pretrained_vocab_size)
-        else:
-            self.__vocab_size = data_vocab_size
-
-        self.start_token = max(data_vocab_size, self.pretrained_vocab_size) - 2
-        self.end_token = max(data_vocab_size, self.pretrained_vocab_size) - 1
-
-        self.__start_sequence = np.zeros(shape=(1, self.__maxlen), dtype=np.int32)
-        self.__start_sequence[0][0] = self.start_token
-
-        self.x_sequences = []
-        self.y_sequences = []
-        for i in range(len(sequences) // 2):
-            x_sequence = sequences[i*2]
-            y_sequence = sequences[i*2+1]
-            assert len(x_sequence) > 0 and len(y_sequence) > 0, 'sequence length cannot be zero'
-            self.x_sequences.append(x_sequence)
-            self.y_sequences.append(y_sequence)
-        assert len(self.x_sequences) == len(self.y_sequences)
+        self.pad_token_index = self.tokenizer.word_index[self.tokenizer.pad_token]
+        self.bos_token_index = self.tokenizer.word_index[self.tokenizer.bos_token]
+        self.eos_token_index = self.tokenizer.word_index[self.tokenizer.eos_token]
         self.prepared = True
 
     def load(self):
         assert self.prepared
         encoder_batch_x, decoder_batch_x, batch_y = [], [], []
-        indices = np.random.choice(len(self.x_sequences), self.batch_size, replace=False)
-        for i in indices:
-            x_sequence = self.x_sequences[i]
-            y_sequence = self.y_sequences[i]
-            encoder_batch_x.append(self.pad_sequences([x_sequence])[0])
+        utterance_sequences_indices = np.random.choice(len(self.utterance_sequences_list), self.batch_size, replace=False)
+        for i in utterance_sequences_indices:
+            utterance_sequences = self.utterance_sequences_list[i]
+            utterance_sequences_index = np.random.randint(len(utterance_sequences) // 2)
+            x_sequence = utterance_sequences[utterance_sequences_index]
+            y_sequence = utterance_sequences[utterance_sequences_index+1]
+            if np.max(y_sequence) >= self.tokenizer.vocab_size:
+                print(f'np.max(y_sequence) : {np.max(y_sequence)}')
+                exit(0)
+            encoder_batch_x.append(self.tokenizer.pad_sequence(x_sequence))
             random_index = np.random.randint(len(y_sequence) + 1)
             if random_index == 0:
-                decoder_x = [self.start_token]
+                decoder_x = np.asarray([self.bos_token_index])
                 y = y_sequence[0]
             elif random_index == len(y_sequence):
-                decoder_x = [self.start_token] + y_sequence
-                y = self.end_token
+                decoder_x = np.concatenate([np.asarray([self.bos_token_index]), y_sequence])
+                y = self.eos_token_index
             else:
-                decoder_x = [self.start_token] + y_sequence[:random_index]
+                decoder_x = np.concatenate([np.asarray([self.bos_token_index]), np.asarray(y_sequence[:random_index])])
                 y = y_sequence[random_index]
-            decoder_batch_x.append(self.pad_sequences([decoder_x])[0])
+            decoder_batch_x.append(self.tokenizer.pad_sequence(decoder_x))
             batch_y.append(y)
         encoder_batch_x = np.asarray(encoder_batch_x).astype(np.int32)
         decoder_batch_x = np.asarray(decoder_batch_x).astype(np.int32)
         batch_y = np.asarray(batch_y).astype(np.int32)
         return [encoder_batch_x, decoder_batch_x], batch_y
 
+    # def next_json_path(self):
+    #     json_path = self.json_paths[self.json_index]
+    #     self.json_index += 1
+    #     if self.json_index == len(self.json_paths):
+    #         self.json_index = 0
+    #         np.random.shuffle(self.json_paths)
+    #     return json_path
+
     def evaluate_generator(self):
         assert self.prepared
-        for _ in range(len(self.x_sequences) // self.batch_size):
+        for _ in range(len(self.utterance_sequences_list) // self.batch_size):
             yield self.load()
 
-    def preprocess(self, nl):
-        assert self.prepared
-        morphed_nl = self.morph_analyzer.morphs(nl)
-        sequence = self.tokenizer.texts_to_sequences([morphed_nl])[0]
-        sequence_padded = self.pad_sequences([sequence])[0]
-        x = np.asarray(sequence_padded).astype(np.int32)
-        x = x.reshape((1,) + x.shape)
+    def preprocess(self, nl, target):
+        assert target in ['words', 'sequence', 'sequence_pad']
+        nl = nl.strip()
+        nl = self.tokenizer.remove_special_tokens(nl)
+        words = self.split_words(nl)
+        if target == 'words':
+            return words
+        sequence = self.tokenizer.text_to_sequence(words)
+        if target == 'sequence':
+            x = np.asarray(sequence).astype(np.int32)
+        else:
+            sequence_padded = self.tokenizer.pad_sequence(sequence)
+            x = np.asarray(sequence_padded).astype(np.int32)
         return x
 
     def postprocess(self, y):
         assert self.prepared
         index = np.argmax(y)
-        end = index in [0, self.end_token]
+        end = index in [self.pad_token_index, self.eos_token_index]
         if end:
-            return 0, '<EOS>', end
+            return None, None, end
         else:
             return index, self.tokenizer.index_word[index], end
 
