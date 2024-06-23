@@ -131,9 +131,6 @@ class DataGenerator:
             utterance_sequences_index = np.random.randint(len(utterance_sequences) // 2)
             x_sequence = utterance_sequences[utterance_sequences_index]
             y_sequence = utterance_sequences[utterance_sequences_index+1]
-            if np.max(y_sequence) >= self.tokenizer.vocab_size:
-                print(f'np.max(y_sequence) : {np.max(y_sequence)}')
-                exit(0)
             encoder_batch_x.append(self.tokenizer.pad_sequence(x_sequence))
             random_index = np.random.randint(len(y_sequence) + 1)
             if random_index == 0:
