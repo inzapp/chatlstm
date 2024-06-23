@@ -107,13 +107,13 @@ class ChatLSTM(CheckpointManager):
             data_path=self.train_data_path,
             batch_size=self.batch_size,
             pretrained_model_output_size=self.pretrained_model_output_size,
-            pretrained_vocab_size=self.pretrained_vocab_size)
+            pretrained_vocab_size=self.pretrained_vocab_size,
+            training=True)
         self.validation_data_generator = DataGenerator(
             data_path=self.validation_data_path,
             batch_size=self.batch_size,
             pretrained_model_output_size=self.pretrained_model_output_size,
-            pretrained_vocab_size=self.pretrained_vocab_size,
-            evaluate=True)
+            pretrained_vocab_size=self.pretrained_vocab_size)
 
         self.optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.lr)
         self.loss_fn = tf.keras.losses.SparseCategoricalCrossentropy()
@@ -203,8 +203,8 @@ class ChatLSTM(CheckpointManager):
             data_generator = None
             if data_path == '':
                 assert dataset in ['train', 'validation']
+                self.train_data_generator.prepare()
                 if dataset == 'train':
-                    self.train_data_generator.prepare()
                     data_generator = self.train_data_generator
                 else:
                     self.validation_data_generator.prepare()

@@ -43,10 +43,10 @@ class DataGenerator:
                  batch_size,
                  pretrained_model_output_size=0,
                  pretrained_vocab_size=0,
-                 evaluate=False):
+                 training=False):
         self.data_path = data_path
         self.batch_size = batch_size
-        self.evaluate = evaluate
+        self.training = training
         self.pretrained_model_output_size = pretrained_model_output_size
         self.pretrained_vocab_size = pretrained_vocab_size
         self.morph_analyzer = konlpy.tag.Komoran()
@@ -111,11 +111,12 @@ class DataGenerator:
         data_vocab_size = self.tokenizer.vocab_size
         data_model_output_size = data_vocab_size + 2
         data_max_sequence_length = self.tokenizer.max_sequence_length
-        if self.pretrained_vocab_size > 0 or self.pretrained_model_output_size > 0:
-            msg = f'pretrained_vocab_size({self.pretrained_vocab_size}) must be equal to data_vocab_size({data_vocab_size})'
-            assert self.pretrained_vocab_size == data_vocab_size, msg
-            msg = f'pretrained_model_output_size({self.pretrained_model_output_size}) must be equal to data_model_output_size({data_model_output_size})'
-            assert self.pretrained_model_output_size == data_max_sequence_length, msg
+        if self.training:
+            if self.pretrained_vocab_size > 0 or self.pretrained_model_output_size > 0:
+                msg = f'pretrained_vocab_size({self.pretrained_vocab_size}) must be equal to data_vocab_size({data_vocab_size})'
+                assert self.pretrained_vocab_size == data_vocab_size, msg
+                msg = f'pretrained_model_output_size({self.pretrained_model_output_size}) must be equal to data_model_output_size({data_model_output_size})'
+                assert self.pretrained_model_output_size == data_max_sequence_length, msg
 
         self.pad_token_index = self.tokenizer.word_index[self.tokenizer.pad_token]
         self.bos_token_index = self.tokenizer.word_index[self.tokenizer.bos_token]
