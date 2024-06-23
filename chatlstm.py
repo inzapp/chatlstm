@@ -192,29 +192,33 @@ class ChatLSTM(CheckpointManager):
         return output_size, vocab_size
 
     def evaluate(self, dataset='train', data_path='', chat=False):
-        data_generator = None
-        if data_path == '':
-            assert dataset in ['train', 'validation']
-            if dataset == 'train':
-                data_generator = self.train_data_generator
-            else:
-                data_generator = self.validation_data_generator
-        else:
-            data_generator = DataGenerator(
-                data_path=data_path,
-                batch_size=self.batch_sze,
-                pretrained_model_output_size=self.pretrained_model_output_size,
-                pretrained_vocab_size=self.pretrained_vocab_size)
-
         if chat:
-            self.train_data_generator.prepare()
+            self.train_data_generator.prepare(load_utterances=False)
             print('chat start\n')
             while True:
                 nl = input('Me : ')
                 output_nl = self.predict(self.model, nl)
                 print(f'AI : {output_nl}')
         else:
-            data_generator.prepare()
+            data_generator = None
+            if data_path == '':
+                assert dataset in ['train', 'validation']
+                if dataset == 'train':
+                    self.train_data_generator.prepare()
+                    data_generator = self.train_data_generator
+                else:
+                    self.validation_data_generator.prepare()
+                    self.validation_data_generator.tokenizer = self.train_data_generator.tokenizer  # use trained tokenizer for validation
+                    data_generator = self.validation_data_generator
+            else:
+                self.train_data_generator.prepare()
+                data_generator = DataGenerator(
+                    data_path=data_path,
+                    batch_size=self.batch_sze,
+                    pretrained_model_output_size=self.pretrained_model_output_size,
+                    pretrained_vocab_size=self.pretrained_vocab_size)
+                data_generator.prepare()
+                data_generator.tokenizer = self.train_data_generator.tokenizer  # use trained tokenzer for validation:w
             self.compile(self.model)
             ret = self.model.evaluate(
                 x=data_generator.evaluate_generator(),
@@ -249,7 +253,7 @@ class ChatLSTM(CheckpointManager):
         self.init_checkpoint_dir()
         iteration_count = self.pretrained_iteration_count
         compute_gradient = tf.function(self.compute_gradient)
-        lr_scheduler = LRScheduler(lr=self.lr, iterations=self.iterations, warm_up=self.warm_up, policy='step')
+        lr_scheduler = LRScheduler(lr=self.lr, lrf=0.1, iterations=self.iterations, warm_up=self.warm_up, policy='onecycle')
         eta_calculator = ETACalculator(iterations=self.iterations)
         eta_calculator.start()
         while True:

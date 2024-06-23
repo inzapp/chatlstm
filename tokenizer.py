@@ -24,6 +24,7 @@ LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
+import json
 import numpy as np
 
 
@@ -128,4 +129,36 @@ class Tokenizer:
         sequence = np.zeros(shape=(self.max_sequence_length,), dtype=np.int32)
         sequence[0] = self.word_index[self.bos_token]
         return sequence
+
+    def save(self, path):
+        d = {}
+        d['vocab_size'] = self.vocab_size
+        d['max_sequence_length'] = self.max_sequence_length
+        d['index_word'] = self.index_word
+        d['word_index'] = self.word_index
+        with open(path, mode='wt', encoding='utf-8') as f:
+            json_str = json.dumps(d, indent=4)
+            f.writelines(json_str)
+
+    def convert_keys_to_int(self, d):
+        new_dict = {}
+        for k, v in d.items():
+            new_dict[int(k)] = v
+        return new_dict
+
+    def convert_values_to_int(self, d):
+        new_dict = {}
+        for k, v in d.items():
+            new_dict[k] = int(v)
+        return new_dict
+
+    def load(self, path):
+        with open(path, mode='rt', encoding='utf-8') as f:
+            d = json.load(f)
+        self.vocab_size = int(d['vocab_size'])
+        self.max_sequence_length = int(d['max_sequence_length'])
+        self.index_word = d['index_word']
+        self.word_index = d['word_index']
+        self.index_word = self.convert_keys_to_int(self.index_word)
+        self.word_index = self.convert_values_to_int(self.word_index)
 

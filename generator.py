@@ -74,27 +74,39 @@ class DataGenerator:
         return self.morph_analyzer.morphs(nl)
         # return nl.split()
 
-    def prepare(self):
+    def is_file_valid(self, path):
+        return os.path.exists(path) and os.path.isfile(path) and os.path.getsize(path) > 0
+
+    def prepare(self, load_utterances=True):
         if self.prepared:
             return
 
-        fs = []
-        for path in self.json_paths:
-            fs.append(self.pool.submit(self.load_json, path))
-        self.utterance_sequences_list = []
-        for f in tqdm(fs):
-            d = f.result()
-            utterances = d['utterances']
-            if len(utterances) > 1:
-                utterance_length = len(utterances) if len(utterances) % 2 == 0 else len(utterances) - 1
-                utterance_sequences = []
-                for i in range(utterance_length):
-                    nl = utterances[i]['text']
-                    words = self.preprocess(nl, target='words')
-                    self.tokenizer.update(words)
-                    sequence = self.tokenizer.text_to_sequence(words)
-                    utterance_sequences.append(sequence)
-                self.utterance_sequences_list.append(utterance_sequences)
+        cache_file_path = f'{self.data_path}/data.cache'
+        if not load_utterances:
+            if self.is_file_valid(cache_file_path):
+                self.tokenizer.load(cache_file_path)
+            else:
+                load_utterances = True
+
+        if load_utterances:
+            fs = []
+            for path in self.json_paths:
+                fs.append(self.pool.submit(self.load_json, path))
+            self.utterance_sequences_list = []
+            for f in tqdm(fs):
+                d = f.result()
+                utterances = d['utterances']
+                if len(utterances) > 1:
+                    utterance_length = len(utterances) if len(utterances) % 2 == 0 else len(utterances) - 1
+                    utterance_sequences = []
+                    for i in range(utterance_length):
+                        nl = utterances[i]['text']
+                        words = self.preprocess(nl, target='words')
+                        self.tokenizer.update(words)
+                        sequence = self.tokenizer.text_to_sequence(words)
+                        utterance_sequences.append(sequence)
+                    self.utterance_sequences_list.append(utterance_sequences)
+            self.tokenizer.save(cache_file_path)
 
         data_vocab_size = self.tokenizer.vocab_size
         data_model_output_size = data_vocab_size + 2
