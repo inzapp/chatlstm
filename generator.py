@@ -134,14 +134,15 @@ class DataGenerator:
             y_sequence = utterance_sequences[utterance_sequences_index+1]
             encoder_batch_x.append(self.tokenizer.pad_sequence(x_sequence))
             random_index = np.random.randint(len(y_sequence) + 1)
+            bos_sequence = np.asarray([self.bos_token_index])
             if random_index == 0:
-                decoder_x = np.asarray([self.bos_token_index])
+                decoder_x = bos_sequence
                 y = y_sequence[0]
             elif random_index == len(y_sequence):
-                decoder_x = np.concatenate([np.asarray([self.bos_token_index]), y_sequence])
+                decoder_x = np.concatenate([bos_sequence, y_sequence])
                 y = self.eos_token_index
             else:
-                decoder_x = np.concatenate([np.asarray([self.bos_token_index]), np.asarray(y_sequence[:random_index])])
+                decoder_x = np.concatenate([bos_sequence, np.asarray(y_sequence[:random_index])])
                 y = y_sequence[random_index]
             decoder_batch_x.append(self.tokenizer.pad_sequence(decoder_x))
             batch_y.append(y)
