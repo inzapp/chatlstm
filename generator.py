@@ -123,7 +123,7 @@ class DataGenerator:
         self.eos_token_index = self.tokenizer.word_index[self.tokenizer.eos_token]
         self.prepared = True
 
-    def load(self):
+    def load(self, evaluate_bos=False):
         assert self.prepared
         encoder_batch_x, decoder_batch_x, batch_y = [], [], []
         utterance_sequences_indices = np.random.choice(len(self.utterance_sequences_list), self.batch_size, replace=False)
@@ -133,7 +133,13 @@ class DataGenerator:
             x_sequence = utterance_sequences[utterance_sequences_index]
             y_sequence = utterance_sequences[utterance_sequences_index+1]
             encoder_batch_x.append(self.tokenizer.pad_sequence(x_sequence))
-            random_index = np.random.randint(len(y_sequence) + 1)
+            if self.training:
+                random_index = np.random.randint(len(y_sequence) + 1)
+            else:
+                if evaluate_bos:
+                    random_index = 0
+                else:
+                    random_index = np.random.randint(len(y_sequence)) + 1
             bos_sequence = np.asarray([self.bos_token_index])
             if random_index == 0:
                 decoder_x = bos_sequence
@@ -159,10 +165,10 @@ class DataGenerator:
     #         np.random.shuffle(self.json_paths)
     #     return json_path
 
-    def evaluate_generator(self):
+    def evaluate_generator(self, evaluate_bos):
         assert self.prepared
         for _ in range(len(self.utterance_sequences_list) // self.batch_size):
-            yield self.load()
+            yield self.load(evaluate_bos=evaluate_bos)
 
     def preprocess(self, nl, target):
         assert target in ['words', 'sequence', 'sequence_pad']

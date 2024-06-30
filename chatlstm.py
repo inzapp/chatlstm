@@ -220,11 +220,19 @@ class ChatLSTM(CheckpointManager):
                 data_generator.prepare()
                 data_generator.tokenizer = self.train_data_generator.tokenizer  # use trained tokenzer for validation:w
             self.compile(self.model)
-            ret = self.model.evaluate(
-                x=data_generator.evaluate_generator(),
+            bos_ret = self.model.evaluate(
+                x=data_generator.evaluate_generator(evaluate_bos=True),
                 batch_size=self.batch_size,
                 return_dict=True)
-            return ret['acc']
+            bos_acc = bos_ret['acc']
+            random_ret = self.model.evaluate(
+                x=data_generator.evaluate_generator(evaluate_bos=False),
+                batch_size=self.batch_size,
+                return_dict=True)
+            random_acc = random_ret['acc']
+            acc_hm = (bos_acc * random_acc * 2.0) / (bos_acc + random_acc)
+            print(f'bos_acc : {bos_acc:.4f}, random_acc : {random_acc:.4f}, acc_hm : {acc_hm:.4f}')
+            return bos_acc, random_acc, acc_hm
 
     def print_loss(self, progress_str, loss):
         loss_str = f'\r{progress_str}'
@@ -267,9 +275,9 @@ class ChatLSTM(CheckpointManager):
                 self.save_last_model(self.model, iteration_count)
             if iteration_count % self.save_interval == 0:
                 print()
-                acc = self.evaluate()
-                content = f'_acc_{acc:.4f}'
-                self.save_best_model(self.model, iteration_count, content=content, metric=acc)
+                bos_acc, random_acc, acc_hm = self.evaluate()
+                content = f'_bos_acc_{bos_acc:.4f}_random_acc_{random_acc:.4f}'
+                self.save_best_model(self.model, iteration_count, content=content, metric=acc_hm)
                 print()
             if iteration_count == self.iterations:
                 print('train end successfully')
