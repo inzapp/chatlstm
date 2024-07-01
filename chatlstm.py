@@ -230,7 +230,7 @@ class ChatLSTM(CheckpointManager):
                 batch_size=self.batch_size,
                 return_dict=True)
             random_acc = random_ret['acc']
-            acc_hm = (bos_acc * random_acc * 2.0) / (bos_acc + random_acc)
+            acc_hm = (bos_acc * random_acc * 2.0) / (bos_acc + random_acc + 1e-7)
             print(f'bos_acc : {bos_acc:.4f}, random_acc : {random_acc:.4f}, acc_hm : {acc_hm:.4f}')
             return bos_acc, random_acc, acc_hm
 
