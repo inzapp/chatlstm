@@ -116,7 +116,7 @@ class ChatLSTM(CheckpointManager):
             pretrained_model_output_size=self.pretrained_model_output_size,
             pretrained_vocab_size=self.pretrained_vocab_size)
 
-        self.optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.lr)
+        self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr)
         self.loss_fn = tf.keras.losses.SparseCategoricalCrossentropy()
 
     def set_global_seed(self, seed=42):
