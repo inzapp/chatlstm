@@ -34,6 +34,7 @@ import numpy as np
 import silence_tensorflow.auto
 import tensorflow as tf
 
+from model import Model
 from eta import ETACalculator
 from generator import DataGenerator
 from lr_scheduler import LRScheduler
@@ -140,31 +141,6 @@ class ChatLSTM(CheckpointManager):
     def graph_forward(model, x):
         return model(x, training=False)
 
-    def build_model(self, max_sequence_length, vocab_size, embedding_dim, recurrent_units):
-        encoder_input = tf.keras.layers.Input(shape=(max_sequence_length,))
-        encoder_x = encoder_input
-        encoder_x = tf.keras.layers.Embedding(input_dim=vocab_size, output_dim=embedding_dim)(encoder_x)
-        encoder_states = []
-        if self.use_gru:
-            encoder_x, state_h = tf.keras.layers.GRU(units=recurrent_units, return_state=True)(encoder_x)
-            encoder_states = [state_h]
-        else:
-            encoder_x, state_h, state_c = tf.keras.layers.LSTM(units=recurrent_units, return_state=True)(encoder_x)
-            encoder_states = [state_h, state_c]
-
-        decoder_input = tf.keras.layers.Input(shape=(max_sequence_length,))
-        decoder_x = decoder_input
-        decoder_x = tf.keras.layers.Embedding(input_dim=vocab_size, output_dim=embedding_dim)(decoder_x)
-        if self.use_gru:
-            decoder_x = tf.keras.layers.GRU(units=recurrent_units)(decoder_x, initial_state=encoder_states)
-        else:
-            decoder_x = tf.keras.layers.LSTM(units=recurrent_units)(decoder_x, initial_state=encoder_states)
-        decoder_x = tf.keras.layers.Dense(units=vocab_size, kernel_initializer='glorot_normal', activation='softmax')(decoder_x)
-
-        output_layer = decoder_x
-        model = tf.keras.models.Model([encoder_input, decoder_input], output_layer)
-        return model
-
     def predict(self, model, nl):
         encoder_x = self.train_data_generator.preprocess(nl, target='sequence_pad')
         encoder_x = np.asarray(encoder_x).reshape((1,) + encoder_x.shape)
@@ -245,11 +221,12 @@ class ChatLSTM(CheckpointManager):
         if self.model is None:
             data_max_sequence_length = self.train_data_generator.tokenizer.max_sequence_length
             data_vocab_size = self.train_data_generator.tokenizer.vocab_size
-            self.model = self.build_model(
+            self.model = Model(
                 max_sequence_length=data_max_sequence_length,
                 vocab_size=data_vocab_size,
                 embedding_dim=self.embedding_dim,
-                recurrent_units=self.recurrent_units)
+                recurrent_units=self.recurrent_units,
+                use_gru=self.use_gru).build()
 
         self.compile(self.model)
         self.model.summary()
