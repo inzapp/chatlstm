@@ -160,7 +160,8 @@ class ChatLSTM(CheckpointManager):
         return output_nl
 
     def compile(self, model):
-        model.compile(optimizer=self.optimizer, loss=self.loss_fn, metrics=['acc'])
+        metric = tf.keras.metrics.SparseTopKCategoricalAccuracy(k=5, name=f'top_5_acc')
+        model.compile(optimizer=self.optimizer, loss=self.loss_fn, metrics=[metric])
 
     def get_output_size_and_vocab_size_from_model(self, model):
         output_size = model.input_shape[-1][-1]
@@ -194,18 +195,18 @@ class ChatLSTM(CheckpointManager):
                     pretrained_model_output_size=self.pretrained_model_output_size,
                     pretrained_vocab_size=self.pretrained_vocab_size)
                 data_generator.prepare()
-                data_generator.tokenizer = self.train_data_generator.tokenizer  # use trained tokenzer for validation:w
+                data_generator.tokenizer = self.train_data_generator.tokenizer  # use trained tokenzer for validation
             self.compile(self.model)
             bos_ret = self.model.evaluate(
                 x=data_generator.evaluate_generator(evaluate_bos=True),
                 batch_size=self.batch_size,
                 return_dict=True)
-            bos_acc = bos_ret['acc']
+            bos_acc = bos_ret['top_5_acc']
             random_ret = self.model.evaluate(
                 x=data_generator.evaluate_generator(evaluate_bos=False),
                 batch_size=self.batch_size,
                 return_dict=True)
-            random_acc = random_ret['acc']
+            random_acc = random_ret['top_5_acc']
             acc_hm = (bos_acc * random_acc * 2.0) / (bos_acc + random_acc + 1e-7)
             print(f'bos_acc : {bos_acc:.4f}, random_acc : {random_acc:.4f}, acc_hm : {acc_hm:.4f}')
             return bos_acc, random_acc, acc_hm
@@ -238,7 +239,7 @@ class ChatLSTM(CheckpointManager):
         self.init_checkpoint_dir()
         iteration_count = self.pretrained_iteration_count
         compute_gradient = tf.function(self.compute_gradient)
-        lr_scheduler = LRScheduler(lr=self.lr, lrf=0.1, iterations=self.iterations, warm_up=self.warm_up, policy='onecycle')
+        lr_scheduler = LRScheduler(lr=self.lr, lrf=0.1, iterations=self.iterations, warm_up=self.warm_up, policy='step')
         eta_calculator = ETACalculator(iterations=self.iterations)
         eta_calculator.start()
         while True:
