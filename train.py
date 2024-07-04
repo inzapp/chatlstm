@@ -47,7 +47,7 @@ if __name__ == '__main__':
     parser.add_argument('--chat', action='store_true', help='chat in cli with pretrained model')
     parser.add_argument('--evaluate', action='store_true', help='evaluate using given dataset')
     parser.add_argument('--model', type=str, default='', help='pretrained model path')
-    parser.add_argument('--dataset', type=str, default='validation', help='dataset for evaluate, train or validation available')
+    parser.add_argument('--dataset', type=str, default='train', help='dataset for evaluate, train or validation available')
     parser.add_argument('--path', type=str, default='', help='json or csv path for prediction or evaluation')
     args = parser.parse_args()
     if args.model != '':
