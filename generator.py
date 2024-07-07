@@ -49,7 +49,7 @@ class DataGenerator:
         self.training = training
         self.pretrained_model_output_size = pretrained_model_output_size
         self.pretrained_vocab_size = pretrained_vocab_size
-        self.morph_analyzer = konlpy.tag.Komoran()
+        self.morph_analyzer = konlpy.tag.Hannanum()
         self.tokenizer = Tokenizer()
         self.pool = ThreadPoolExecutor(8)
         self.pad_token_index = None
