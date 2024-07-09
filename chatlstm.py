@@ -174,6 +174,8 @@ class ChatLSTM(CheckpointManager):
             print('chat start\n')
             while True:
                 nl = input('Me : ')
+                if nl == 'q':
+                    exit(0)
                 output_nl = self.predict(self.model, nl)
                 print(f'AI : {output_nl}')
         else:
