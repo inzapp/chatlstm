@@ -86,10 +86,16 @@ class Tokenizer:
         for word in words:
             self.add_token(word)
 
-    def pad_sequence(self, sequence):
+    def pad_sequence(self, sequence, unk_dropout=0.0):
+        assert 0.0 <= unk_dropout <= 1.0
         sequence_padded = np.zeros(shape=(self.max_sequence_length,), dtype=np.int32)
         sequence_length = min(len(sequence), self.max_sequence_length)
         sequence_padded[:sequence_length] = sequence[:sequence_length]
+        if unk_dropout > 0.0:
+            unk_ratio = np.random.uniform() * unk_dropout
+            unk_count = int(unk_ratio * sequence_length)
+            unk_indices = np.random.choice(sequence_length, unk_count, replace=False)
+            sequence_padded[unk_indices] = self.word_index[self.unk_token]
         return sequence_padded
 
     def text_to_sequence(self, text):

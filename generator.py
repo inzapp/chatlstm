@@ -132,7 +132,7 @@ class DataGenerator:
             utterance_sequences_index = np.random.randint(len(utterance_sequences) // 2)
             x_sequence = utterance_sequences[utterance_sequences_index]
             y_sequence = utterance_sequences[utterance_sequences_index+1]
-            encoder_batch_x.append(self.tokenizer.pad_sequence(x_sequence))
+            encoder_batch_x.append(self.tokenizer.pad_sequence(x_sequence, unk_dropout=0.1 if self.training else 0.0))
             if self.training:
                 random_index = np.random.randint(len(y_sequence) + 1)
             else:
