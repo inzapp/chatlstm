@@ -24,6 +24,7 @@ LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
+import math
 import numpy as np
 import tensorflow as tf
 
@@ -47,41 +48,41 @@ class Model:
         input_layer = tf.keras.layers.Input(shape=(self.max_sequence_length,))
         x = input_layer
         x = self.embedding(x, input_dim=self.vocab_size, output_dim=self.embedding_dim)
-
-        if self.num_downsacling == 0:
-            x = self.conv1d(x, self.embedding_dim, 5, 1, activation='relu')
-        else:
-            for _ in range(self.num_downsacling):
-                x = self.conv1d(x, self.embedding_dim, 5, 2, activation='relu')
-
+        x, scaled_recurrent_units = self.downscale_block(x)
         if self.use_gru:
-            x, states = self.gru(x, units=self.recurrent_units, return_state=True)
+            x, states = self.gru(x, units=scaled_recurrent_units, return_state=True)
         else:
-            x, states = self.lstm(x, units=self.recurrent_units, return_state=True)
+            x, states = self.lstm(x, units=scaled_recurrent_units, return_state=True)
         return input_layer, states
 
     def build_decoder(self, encoder_states):
         input_layer = tf.keras.layers.Input(shape=(self.max_sequence_length,))
         x = input_layer
         x = self.embedding(x, input_dim=self.vocab_size, output_dim=self.embedding_dim)
-
-        if self.num_downsacling == 0:
-            x = self.conv1d(x, self.embedding_dim, 5, 1, activation='relu')
-        else:
-            for _ in range(self.num_downsacling):
-                x = self.conv1d(x, self.embedding_dim, 5, 2, activation='relu')
-
+        x, scaled_recurrent_units = self.downscale_block(x)
         if self.use_gru:
-            x = self.gru(x, units=self.recurrent_units, initial_state=encoder_states)
+            x = self.gru(x, units=scaled_recurrent_units, initial_state=encoder_states)
         else:
-            x = self.lstm(x, units=self.recurrent_units, initial_state=encoder_states)
+            x = self.lstm(x, units=scaled_recurrent_units, initial_state=encoder_states)
         output_layer = self.output_layer(x)
         return input_layer, output_layer
 
     def embedding(self, x, input_dim, output_dim):
         return tf.keras.layers.Embedding(input_dim=input_dim, output_dim=output_dim)(x)
 
-    def conv1d(self, x, filters, kernel_size, strides, activation='relu'):
+    def downscale_block(self, x):
+        scaled_recurrent_units = self.recurrent_units
+        if self.num_downsacling == 0:
+            x = self.conv1d(x, self.embedding_dim, 5, 1, activation='leaky')
+        else:
+            conv_filters = self.embedding_dim
+            for _ in range(self.num_downsacling):
+                conv_filters = min(conv_filters * 2, 1024)
+                x = self.conv1d(x, conv_filters, 5, 2, activation='leaky')
+            scaled_recurrent_units = conv_filters
+        return x, scaled_recurrent_units
+
+    def conv1d(self, x, filters, kernel_size, strides, activation='leaky'):
         x = tf.keras.layers.Conv1D(
             strides=strides,
             filters=filters,
@@ -107,7 +108,12 @@ class Model:
             x = tf.keras.layers.GRU(units=units, return_state=return_state)(x, initial_state=initial_state)
             return x
 
+    def calculate_units(self, c=3, min_units=64, max_units=1024):
+        return min(max(int(c * math.sqrt(self.vocab_size)), min_units), max_units)
+
     def output_layer(self, x):
+        x = tf.keras.layers.Dense(units=self.calculate_units(), kernel_initializer=self.kernel_initializer())(x)
+        x = self.activation(x, 'leaky')
         return tf.keras.layers.Dense(units=self.vocab_size, kernel_initializer=self.kernel_initializer(), activation='softmax')(x)
 
     def kernel_initializer(self):
