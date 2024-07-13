@@ -178,7 +178,7 @@ class ChatLSTM(CheckpointManager):
                     self.validation_data_generator.tokenizer = self.train_data_generator.tokenizer
                     data_generator = self.validation_data_generator
                 print('chat start\n')
-                for json_path in data_generator.json_paths[:10]:
+                for json_path in data_generator.json_paths[:auto_count]:
                     d = data_generator.load_json(json_path)
                     nls = data_generator.parse_utterance_nls(d)
                     print(f'You : {nls[0]}')
