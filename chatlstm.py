@@ -168,20 +168,34 @@ class ChatLSTM(CheckpointManager):
         vocab_size = model.output_shape[-1]
         return output_size, vocab_size
 
-    def evaluate(self, dataset='train', data_path='', chat=False):
+    def evaluate(self, dataset='train', data_path='', chat=False, chat_auto=False, auto_count=10):
+        assert dataset in ['train', 'validation']
         if chat:
             self.train_data_generator.prepare(load_utterances=False)
-            print('chat start\n')
-            while True:
-                nl = input('Me : ')
-                if nl == 'q':
-                    exit(0)
-                output_nl = self.predict(self.model, nl)
-                print(f'AI : {output_nl}')
+            if chat_auto:
+                data_generator = self.train_data_generator
+                if dataset == 'validation':
+                    self.validation_data_generator.tokenizer = self.train_data_generator.tokenizer
+                    data_generator = self.validation_data_generator
+                print('chat start\n')
+                for json_path in data_generator.json_paths[:10]:
+                    d = data_generator.load_json(json_path)
+                    nls = data_generator.parse_utterance_nls(d)
+                    print(f'You : {nls[0]}')
+                    output_nl = self.predict(self.model, nls[0])
+                    print(f'GT : {nls[1]}')
+                    print(f'AI : {output_nl}\n')
+            else:
+                print('chat start\n')
+                while True:
+                    nl = input('You : ')
+                    if nl == 'q':
+                        exit(0)
+                    output_nl = self.predict(self.model, nl)
+                    print(f'AI : {output_nl}\n')
         else:
             data_generator = None
             if data_path == '':
-                assert dataset in ['train', 'validation']
                 self.train_data_generator.prepare()
                 if dataset == 'train':
                     data_generator = self.train_data_generator

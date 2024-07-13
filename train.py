@@ -44,9 +44,11 @@ if __name__ == '__main__':
         use_gru=True)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--chat', action='store_true', help='chat in cli with pretrained model')
     parser.add_argument('--evaluate', action='store_true', help='evaluate using given dataset')
     parser.add_argument('--model', type=str, default='', help='pretrained model path')
+    parser.add_argument('--chat', action='store_true', help='chat in cli with pretrained model')
+    parser.add_argument('--auto', action='store_true', help='auto chat flag using train data')
+    parser.add_argument('--auto-count', type=int, default=10, help='auto chat count')
     parser.add_argument('--dataset', type=str, default='train', help='dataset for evaluate, train or validation available')
     parser.add_argument('--path', type=str, default='', help='json or csv path for prediction or evaluation')
     args = parser.parse_args()
@@ -54,7 +56,7 @@ if __name__ == '__main__':
         config.pretrained_model_path = args.model
     chatlstm = ChatLSTM(config=config, evaluate=args.evaluate)
     if args.evaluate:
-        chatlstm.evaluate(dataset=args.dataset, data_path=args.path, chat=args.chat)
+        chatlstm.evaluate(dataset=args.dataset, data_path=args.path, chat=args.chat, chat_auto=args.auto, auto_count=args.auto_count)
     else:
         chatlstm.train()
 

@@ -59,7 +59,7 @@ class DataGenerator:
         self.prepared = False
         self.json_paths = self.get_json_paths(self.data_path)
         self.json_index = 0
-        # np.random.shuffle(self.json_paths)
+        np.random.shuffle(self.json_paths)
         assert len(self.json_paths) > 0, f'json data not found : {self.data_path}'
 
     def get_json_paths(self, data_path):
@@ -69,6 +69,17 @@ class DataGenerator:
         with open(json_path, mode='rt', encoding='utf-8') as f:
             d = json.load(f)
         return d
+
+    def parse_utterance_nls(self, d, key='utterances'):
+        nls = []
+        if type(d) is dict and key in list(d.keys()):
+            utterances = d[key]
+            if type(utterances) is list and len(utterances) > 1:
+                utterances_length = len(utterances) if len(utterances) % 2 == 0 else len(utterances) - 1
+                for i in range(utterances_length):
+                    nl = utterances[i]['text']
+                    nls.append(nl)
+        return nls
 
     def split_words(self, nl):
         return self.morph_analyzer.morphs(nl)
@@ -95,12 +106,10 @@ class DataGenerator:
             self.utterance_sequences_list = []
             for f in tqdm(fs):
                 d = f.result()
-                utterances = d['utterances']
-                if len(utterances) > 1:
-                    utterance_length = len(utterances) if len(utterances) % 2 == 0 else len(utterances) - 1
+                nls = self.parse_utterance_nls(d)
+                if len(nls) > 0:
                     utterance_sequences = []
-                    for i in range(utterance_length):
-                        nl = utterances[i]['text']
+                    for nl in nls:
                         words = self.preprocess(nl, target='words')
                         self.tokenizer.update(words)
                         sequence = self.tokenizer.text_to_sequence(words)
