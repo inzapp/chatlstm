@@ -45,6 +45,7 @@ class Tokenizer:
         self.morph_analyzer = konlpy.tag.Hannanum()
         self.bos_eos_token_margin = 16
         self.init()
+        self.is_loaded = False
 
     def remove_special_tokens(self, nl):
         updated_count = 0
@@ -165,6 +166,7 @@ class Tokenizer:
         d['token_to_index_dict'] = self.token_to_index_dict
         with open(path, mode='wt', encoding='utf-8') as f:
             json.dump(d, f, ensure_ascii=True, indent=4)
+        self.is_loaded = True
 
     def convert_keys_to_int(self, d):
         new_dict = {}
@@ -187,4 +189,5 @@ class Tokenizer:
         self.token_to_index_dict = d['token_to_index_dict']
         self.index_to_token_dict = self.convert_keys_to_int(self.index_to_token_dict)
         self.token_to_index_dict = self.convert_values_to_int(self.token_to_index_dict)
+        self.is_loaded = True
 

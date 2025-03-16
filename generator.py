@@ -48,8 +48,6 @@ class DataGenerator:
         self.pretrained_vocab_size = pretrained_vocab_size
         self.tokenizer = Tokenizer()
         self.pool = ThreadPoolExecutor(8)
-        self.ds = None
-        self.prepared = False
         self.json_paths = self.get_json_paths(self.data_path)
         self.json_index = 0
         np.random.shuffle(self.json_paths)
@@ -101,24 +99,133 @@ class DataGenerator:
     def exit(self):
         self.signal_handler(signal.SIGINT, None)
 
+    def is_json_data_valid(self, d, verbose=False):
+        data_type = self.get_json_value(d, 'type')
+        if data_type is None:
+            if verbose:
+                print(f'json key "type" is not found : {path}')
+            return False
+
+        if data_type not in ['text', 'dialogue']:
+            if verbose:
+                print(f'invalid data type {data_type} : path')
+            return False
+
+        if data_type == 'text':
+            nl = self.get_json_value(d, 'content')
+            if nl is None:
+                if verbose:
+                    print(f'json key "content" is not found : {path}')
+                return False
+
+            if type(nl) is not str:
+                if verbose:
+                    print(f'content type is not str : {path}')
+                return False
+
+            if len(nl) == 0:
+                if verbose:
+                    print(f'content nl length is zero : {path}')
+                return False
+        elif data_type == 'dialogue':
+            dialogues = self.get_json_value(d, 'content')
+            if dialogues is None:
+                if verbose:
+                    print(f'json key "content" is not found : {path}')
+                return False
+
+            if type(dialogues) is not list:
+                if verbose:
+                    print(f'content type is not list : {path}')
+                return False
+
+            if len(dialogues) == 0:
+                if verbose:
+                    print(f'content dialogue list size is zero : {path}')
+                return False
+
+            for dialogue in dialogues:
+                input_nl = self.get_json_value(dialogue, 'input')
+                if input_nl is None:
+                    if verbose:
+                        print(f'json key "input" is not found : {path}')
+                    return False
+
+                if type(input_nl) is not str:
+                    if verbose:
+                        print(f'input_nl type is not string : {path}')
+                    return False
+
+                if len(input_nl) == 0:
+                    if verbose:
+                        print(f'input_nl length is zero : {path}')
+                    return False
+
+                output_nl = self.get_json_value(dialogue, 'output')
+                if output_nl is None:
+                    if verbose:
+                        print(f'json key "output" is not found : {path}')
+                    return False
+
+                if type(output_nl) is not str:
+                    if verbose:
+                        print(f'output_nl type is not string : {path}')
+                    return False
+
+                if len(output_nl) == 0:
+                    if verbose:
+                        print(f'output_nl length is zero : {path}')
+                    return False
+        return True
+
+    def load_tokenizer(self):
+        if self.tokenizer.is_loaded:
+            return
+        else:
+            tokenizer_file_path = f'{self.data_path}/tokenizer.data'
+            if self.is_file_valid(tokenizer_file_path):
+                self.tokenizer.load(tokenizer_file_path)
+                return
+
+            fs = []
+            for path in self.json_paths:
+                fs.append(self.pool.submit(self.load_json, path))
+            for f in tqdm(fs):
+                d, path = f.result()
+                if self.is_json_data_valid(d, verbose=True):
+                    data_type = d['type']
+                    if data_type == 'text':
+                        nl = d['content']
+                        self.tokenizer.update(nl)
+                    elif data_type == 'dialogue':
+                        dialogues = d['content']
+                        for dialogue in dialogues:
+                            input_nl = dialogue['input']
+                            output_nl = dialogue['output']
+                            self.tokenizer.update(input_nl)
+                            self.tokenizer.update(output_nl)
+            self.tokenizer.save(tokenizer_file_path)
+
     def load_xy(self):
         json_path = self.next_json_path()
         d, _ = self.load_json(json_path)
+        if not self.is_json_data_valid(d):
+            return None, None
+
         x_sequence, y_index = None, None
         if d['type'] == 'text':
             nl = d['content']
             sequence = self.preprocess(nl, target='sequence', data_type='text')
-            if len(sequence) > 0:
-                random_index = np.random.randint(len(sequence))
-                if random_index == len(sequence) - 1:
-                    x_sequence = sequence
-                    y_index = self.tokenizer.token_to_index_dict[self.tokenizer.eos_token]
-                elif random_index == 0:
-                    x_sequence = sequence[:1]
-                    y_index = sequence[1]
-                else:
-                    x_sequence = sequence[:random_index]
-                    y_index = sequence[random_index]
+            random_index = np.random.randint(len(sequence))
+            if random_index == len(sequence) - 1:
+                x_sequence = sequence
+                y_index = self.tokenizer.token_to_index_dict[self.tokenizer.eos_token]
+            elif random_index == 0:
+                x_sequence = sequence[:1]
+                y_index = sequence[1]
+            else:
+                x_sequence = sequence[:random_index]
+                y_index = sequence[random_index]
         elif d['type'] == 'dialogue':
             dialogues = d['content']
             dialogue_index = np.random.randint(len(dialogues))
@@ -127,17 +234,16 @@ class DataGenerator:
             output_nl = dialogue['output']
             input_sequence = self.preprocess(input_nl, target='sequence', data_type='dialogue_input')
             output_sequence = self.preprocess(output_nl, target='sequence', data_type='dialogue_output')
-            if len(input_sequence) > 0 and len(output_sequence) > 0:
-                random_index = np.random.randint(len(output_sequence))
-                if random_index == len(output_sequence) - 1:
-                    x_sequence = np.append(input_sequence, output_sequence)
-                    y_index = self.tokenizer.token_to_index_dict[self.tokenizer.eos_token]
-                elif random_index == 0:
-                    x_sequence = np.append(input_sequence, output_sequence[1:])
-                    y_index = output_sequence[1]
-                else:
-                    x_sequence = np.append(input_sequence, output_sequence[:random_index])
-                    y_index = output_sequence[random_index]
+            random_index = np.random.randint(len(output_sequence))
+            if random_index == len(output_sequence) - 1:
+                x_sequence = np.append(input_sequence, output_sequence)
+                y_index = self.tokenizer.token_to_index_dict[self.tokenizer.eos_token]
+            elif random_index == 0:
+                x_sequence = np.append(input_sequence, output_sequence[1:])
+                y_index = output_sequence[1]
+            else:
+                x_sequence = np.append(input_sequence, output_sequence[:random_index])
+                y_index = output_sequence[random_index]
 
         x, y = None, None
         if x_sequence is not None and y_index is not None:
@@ -177,84 +283,85 @@ class DataGenerator:
     def is_file_valid(self, path):
         return os.path.exists(path) and os.path.isfile(path) and os.path.getsize(path) > 0
 
-    def prepare(self, load_data=True):
-        if self.prepared:
-            return
+    # def prepare(self, load_data=True):
+        # self.load_tokenizer()
+        # if self.prepared:
+        #     return
 
-        tokenizer_file_path = f'{self.data_path}/tokenizer.data'
-        if not load_data:
-            if self.is_file_valid(tokenizer_file_path):
-                self.tokenizer.load(tokenizer_file_path)
-            else:
-                load_data = True
+        # tokenizer_file_path = f'{self.data_path}/tokenizer.data'
+        # if not load_data:
+        #     if self.is_file_valid(tokenizer_file_path):
+        #         self.tokenizer.load(tokenizer_file_path)
+        #     else:
+        #         load_data = True
 
-        if load_data:
-            fs = []
-            for path in self.json_paths:
-                fs.append(self.pool.submit(self.load_json, path))
-            self.ds = []
-            for f in tqdm(fs):
-                d, path = f.result()
-                data_type = self.get_json_value(d, 'type')
-                if data_type is None:
-                    print(f'json key "type" is not found : {path}')
-                    continue
+        # if load_data:
+        #     fs = []
+        #     for path in self.json_paths:
+        #         fs.append(self.pool.submit(self.load_json, path))
+        #     self.ds = []
+        #     for f in tqdm(fs):
+        #         d, path = f.result()
+        #         data_type = self.get_json_value(d, 'type')
+        #         if data_type is None:
+        #             print(f'json key "type" is not found : {path}')
+        #             continue
 
-                if data_type == 'text':
-                    nl = self.get_json_value(d, 'content')
-                    if nl is None:
-                        print(f'json key "content" is not found : {path}')
-                        continue
+        #         if data_type == 'text':
+        #             nl = self.get_json_value(d, 'content')
+        #             if nl is None:
+        #                 print(f'json key "content" is not found : {path}')
+        #                 continue
 
-                    self.tokenizer.update(nl)
-                    self.ds.append(d)
-                elif data_type == 'dialogue':
-                    dialogues = self.get_json_value(d, 'content')
-                    if dialogues is None:
-                        print(f'json key "content" is not found : {path}')
-                        continue
+        #             self.tokenizer.update(nl)
+        #             self.ds.append(d)
+        #         elif data_type == 'dialogue':
+        #             dialogues = self.get_json_value(d, 'content')
+        #             if dialogues is None:
+        #                 print(f'json key "content" is not found : {path}')
+        #                 continue
 
-                    error = False
-                    input_nls = []
-                    output_nls = []
-                    for dialogue in dialogues:
-                        input_nl = self.get_json_value(dialogue, 'input')
-                        if input_nl is None:
-                            print(f'json key "input" is not found : {path}')
-                            error = True
-                            break
+        #             error = False
+        #             input_nls = []
+        #             output_nls = []
+        #             for dialogue in dialogues:
+        #                 input_nl = self.get_json_value(dialogue, 'input')
+        #                 if input_nl is None:
+        #                     print(f'json key "input" is not found : {path}')
+        #                     error = True
+        #                     break
 
-                        output_nl = self.get_json_value(dialogue, 'output')
-                        if output_nl is None:
-                            print(f'json key "output" is not found : {path}')
-                            error = True
-                            break
+        #                 output_nl = self.get_json_value(dialogue, 'output')
+        #                 if output_nl is None:
+        #                     print(f'json key "output" is not found : {path}')
+        #                     error = True
+        #                     break
 
-                        if input_nl is not None and output_nl is not None:
-                            input_nls.append(input_nl)
-                            output_nls.append(output_nl)
+        #                 if input_nl is not None and output_nl is not None:
+        #                     input_nls.append(input_nl)
+        #                     output_nls.append(output_nl)
 
-                    if not error:
-                        for input_nl in input_nls:
-                            self.tokenizer.update(input_nl)
-                        for output_nl in output_nls:
-                            self.tokenizer.update(output_nl)
-                        self.ds.append(d)
+        #             if not error:
+        #                 for input_nl in input_nls:
+        #                     self.tokenizer.update(input_nl)
+        #                 for output_nl in output_nls:
+        #                     self.tokenizer.update(output_nl)
+        #                 self.ds.append(d)
 
-                else:
-                    print(f'invalid data_type "{data_type}" : {path}')
-            self.tokenizer.save(tokenizer_file_path)
+        #         else:
+        #             print(f'invalid data_type "{data_type}" : {path}')
+        #     self.tokenizer.save(tokenizer_file_path)
 
-        data_vocab_size = self.tokenizer.vocab_size
-        data_model_output_size = data_vocab_size + self.tokenizer.bos_eos_token_margin
-        data_max_sequence_length = self.tokenizer.max_sequence_length
-        if self.training:
-            if self.pretrained_vocab_size > 0 or self.pretrained_model_output_size > 0:
-                msg = f'pretrained_vocab_size({self.pretrained_vocab_size}) must be equal to data_vocab_size({data_vocab_size})'
-                assert self.pretrained_vocab_size == data_vocab_size, msg
-                msg = f'pretrained_model_output_size({self.pretrained_model_output_size}) must be equal to data_model_output_size({data_model_output_size})'
-                assert self.pretrained_model_output_size == data_max_sequence_length, msg
-        self.prepared = True
+        # data_vocab_size = self.tokenizer.vocab_size
+        # data_model_output_size = data_vocab_size + self.tokenizer.bos_eos_token_margin
+        # data_max_sequence_length = self.tokenizer.max_sequence_length
+        # if self.training:
+        #     if self.pretrained_vocab_size > 0 or self.pretrained_model_output_size > 0:
+        #         msg = f'pretrained_vocab_size({self.pretrained_vocab_size}) must be equal to data_vocab_size({data_vocab_size})'
+        #         assert self.pretrained_vocab_size == data_vocab_size, msg
+        #         msg = f'pretrained_model_output_size({self.pretrained_model_output_size}) must be equal to data_model_output_size({data_model_output_size})'
+        #         assert self.pretrained_model_output_size == data_max_sequence_length, msg
+        # self.prepared = True
 
     def load(self):
         batch_x, batch_y = [], []
@@ -276,7 +383,7 @@ class DataGenerator:
         return json_path
 
     def evaluate_generator(self):
-        assert self.prepared
+        assert self.tokenizer.is_loaded
         for _ in range(len(self.ds) // self.cfg.batch_size):
             yield self.load()
 
@@ -305,7 +412,7 @@ class DataGenerator:
         print(f'invalid preprocess target : {target}')
 
     def postprocess(self, y):
-        assert self.prepared
+        assert self.tokenizer.is_loaded
         index = np.argmax(y)
         pad_token_index = self.tokenizer.token_to_index_dict[self.tokenizer.pad_token]
         eos_token_index = self.tokenizer.token_to_index_dict[self.tokenizer.eos_token]

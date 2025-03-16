@@ -222,19 +222,19 @@ class ChatLSTM(CheckpointManager):
     def evaluate(self, dataset='train', chat=False, chat_auto=False, auto_count=10):
         assert dataset in ['train', 'validation']
         if chat:
-            self.train_data_generator.prepare(load_data=False)
+            self.train_data_generator.load_tokenizer()
             if chat_auto:
                 data_generator = self.train_data_generator
                 if dataset == 'validation':
-                    self.validation_data_generator.tokenizer = self.train_data_generator.tokenizer
                     data_generator = self.validation_data_generator
+                    data_generator.tokenizer = self.train_data_generator.tokenizer
                 print('chat start\n')
                 i = 0
                 valid_type_chat_count = 0
                 while True:
                     json_path = data_generator.json_paths[i]
                     d, _ = data_generator.load_json(json_path)
-                    if d['type'] == 'dialogue':
+                    if data_generator.is_json_data_valid(d) and d['type'] == 'dialogue':
                         if i > 0:
                             print()
                         dialogues = d['content']
@@ -249,6 +249,10 @@ class ChatLSTM(CheckpointManager):
                         if valid_type_chat_count == auto_count:
                             break
                     i += 1
+                    if i == len(data_generator.json_paths) or i > 300:
+                        if i > 300:
+                            print(f'dialogue type data not found in 300 json... maybe not exists?')
+                        break
             else:
                 print('chat start\n')
                 while True:
@@ -258,11 +262,11 @@ class ChatLSTM(CheckpointManager):
                     output_nl = self.predict(self.model, nl, data_type='dialogue')
                     print(f'AI : {output_nl}\n')
         else:
-            self.train_data_generator.prepare()
+            self.train_data_generator.load_tokenizer()
             if dataset == 'train':
                 data_generator = self.train_data_generator
             else:
-                self.validation_data_generator.prepare()
+                self.validation_data_generator.load_tokenizer()
                 self.validation_data_generator.tokenizer = self.train_data_generator.tokenizer  # use trained tokenizer for validation
                 data_generator = self.validation_data_generator
             self.compile(self.model)
@@ -283,8 +287,8 @@ class ChatLSTM(CheckpointManager):
         print(loss_str, end='')
 
     def train(self):
-        self.train_data_generator.prepare()
-        self.validation_data_generator.prepare()
+        self.train_data_generator.load_tokenizer()
+        self.validation_data_generator.load_tokenizer()
         if self.model is None:
             data_max_sequence_length = self.train_data_generator.tokenizer.max_sequence_length
             data_vocab_size = self.train_data_generator.tokenizer.vocab_size
