@@ -99,7 +99,7 @@ class DataGenerator:
     def exit(self):
         self.signal_handler(signal.SIGINT, None)
 
-    def is_json_data_valid(self, d, verbose=False):
+    def is_json_data_valid(self, d, path, verbose=False):
         data_type = self.get_json_value(d, 'type')
         if data_type is None:
             if verbose:
@@ -192,7 +192,7 @@ class DataGenerator:
                 fs.append(self.pool.submit(self.load_json, path))
             for f in tqdm(fs):
                 d, path = f.result()
-                if self.is_json_data_valid(d, verbose=True):
+                if self.is_json_data_valid(d, path, verbose=True):
                     data_type = d['type']
                     if data_type == 'text':
                         nl = d['content']
@@ -208,8 +208,8 @@ class DataGenerator:
 
     def load_xy(self):
         json_path = self.next_json_path()
-        d, _ = self.load_json(json_path)
-        if not self.is_json_data_valid(d):
+        d, path = self.load_json(json_path)
+        if not self.is_json_data_valid(d, path):
             return None, None
 
         x_sequence, y_index = None, None
@@ -384,7 +384,7 @@ class DataGenerator:
 
     def evaluate_generator(self):
         assert self.tokenizer.is_loaded
-        for _ in range(len(self.ds) // self.cfg.batch_size):
+        for _ in range(len(self.json_paths) // self.cfg.batch_size):
             yield self.load()
 
     def preprocess(self, nl, target, data_type):

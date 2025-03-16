@@ -233,8 +233,8 @@ class ChatLSTM(CheckpointManager):
                 valid_type_chat_count = 0
                 while True:
                     json_path = data_generator.json_paths[i]
-                    d, _ = data_generator.load_json(json_path)
-                    if data_generator.is_json_data_valid(d) and d['type'] == 'dialogue':
+                    d, path = data_generator.load_json(json_path)
+                    if data_generator.is_json_data_valid(d, path) and d['type'] == 'dialogue':
                         if i > 0:
                             print()
                         dialogues = d['content']
