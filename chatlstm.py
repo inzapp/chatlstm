@@ -39,6 +39,8 @@ tf.get_logger().setLevel('ERROR')
 tf.autograph.set_verbosity(3)
 
 import yaml
+import random
+import numpy as np
 import shutil as sh
 
 from model import Model
@@ -298,7 +300,8 @@ class ChatLSTM(CheckpointManager):
         print()
         print(f'vocab size : {self.train_data_generator.tokenizer.vocab_size}')
         print(f'max sequence length : {self.train_data_generator.tokenizer.max_sequence_length}')
-        print(f'train on {len(self.train_data_generator.json_paths)} samples.')
+        print(f'train on {len(self.train_data_generator.json_paths)} samples\n')
+        self.train_data_generator.start()
         if self.cfg.pretrained_model_path is not None:
             print(f'start training with pretrained model : {self.cfg.pretrained_model_path}')
         else:
@@ -322,6 +325,7 @@ class ChatLSTM(CheckpointManager):
                 self.save_last_model(self.model, iteration_count)
             if warm_up_end:
                 if iteration_count % self.cfg.checkpoint_interval == 0:
+                    self.train_data_generator.pause()
                     print()
                     acc = self.evaluate()
                     best_model_path = self.save_best_model(self.model, iteration_count, metric=acc, mode='max', content=f'_acc_{acc:.4f}')
@@ -329,8 +333,10 @@ class ChatLSTM(CheckpointManager):
                         print(f'[{iteration_count} iter] evaluation success with acc {acc:.4f}, new best model is saved to {best_model_path}\n')
                     else:
                         print(f'[{iteration_count} iter] evaluation success with acc {acc:.4f}\n')
+                    self.train_data_generator.resume()
             if iteration_count == self.cfg.iterations:
                 # self.remove_last_model()
+                self.train_data_generator.stop()
                 print('train end successfully')
                 return
 

@@ -25,13 +25,16 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 import os
-import csv
+import sys
 import json
+import signal
+import threading
 import numpy as np
-import tensorflow as tf
 
 from glob import glob
 from tqdm import tqdm
+from time import sleep
+from collections import deque
 from tokenizer import Tokenizer
 from concurrent.futures.thread import ThreadPoolExecutor
 
@@ -50,7 +53,110 @@ class DataGenerator:
         self.json_paths = self.get_json_paths(self.data_path)
         self.json_index = 0
         np.random.shuffle(self.json_paths)
-        assert len(self.json_paths) > 0, f'json data not found : {self.cfg.data_path}'
+        assert len(self.json_paths) > 0, f'json data not found : {self.data_path}'
+
+        self.lock = threading.Lock()
+        self.q_thread = threading.Thread(target=self.load_xy_into_q)
+        self.q_thread.daemon = True
+        self.q = deque()
+        self.q_thread_running = False
+        self.q_thread_pause = False
+        self.q_indices = list(range(self.cfg.max_q_size))
+
+    def signal_handler(self, sig, frame):
+        print()
+        print(f'{signal.Signals(sig).name} signal detected, please wait until the end of the thread')
+        self.stop()
+        print(f'exit successfully')
+        sys.exit(0)
+
+    def start(self):
+        self.q_thread_running = True
+        self.q_thread.start()
+        signal.signal(signal.SIGINT, self.signal_handler)
+        signal.signal(signal.SIGTERM, self.signal_handler)
+        while True:
+            sleep(1.0)
+            percentage = (len(self.q) / self.cfg.max_q_size) * 100.0
+            print(f'prefetching training data... {percentage:.1f}%')
+            with self.lock:
+                if len(self.q) >= self.cfg.max_q_size:
+                    print()
+                    break
+
+    def stop(self):
+        if self.q_thread_running:
+            self.q_thread_running = False
+            while self.q_thread.is_alive():
+                sleep(0.1)
+
+    def pause(self):
+        if self.q_thread_running:
+            self.q_thread_pause = True
+
+    def resume(self):
+        if self.q_thread_running:
+            self.q_thread_pause = False
+
+    def exit(self):
+        self.signal_handler(signal.SIGINT, None)
+
+    def load_xy(self):
+        json_path = self.next_json_path()
+        d, _ = self.load_json(json_path)
+        x_sequence, y_index = None, None
+        if d['type'] == 'text':
+            nl = d['content']
+            sequence = self.preprocess(nl, target='sequence', data_type='text')
+            if len(sequence) > 0:
+                random_index = np.random.randint(len(sequence))
+                if random_index == len(sequence) - 1:
+                    x_sequence = sequence
+                    y_index = self.tokenizer.token_to_index_dict[self.tokenizer.eos_token]
+                elif random_index == 0:
+                    x_sequence = sequence[:1]
+                    y_index = sequence[1]
+                else:
+                    x_sequence = sequence[:random_index]
+                    y_index = sequence[random_index]
+        elif d['type'] == 'dialogue':
+            dialogues = d['content']
+            dialogue_index = np.random.randint(len(dialogues))
+            dialogue = dialogues[dialogue_index]
+            input_nl = dialogue['input']
+            output_nl = dialogue['output']
+            input_sequence = self.preprocess(input_nl, target='sequence', data_type='dialogue_input')
+            output_sequence = self.preprocess(output_nl, target='sequence', data_type='dialogue_output')
+            if len(input_sequence) > 0 and len(output_sequence) > 0:
+                random_index = np.random.randint(len(output_sequence))
+                if random_index == len(output_sequence) - 1:
+                    x_sequence = np.append(input_sequence, output_sequence)
+                    y_index = self.tokenizer.token_to_index_dict[self.tokenizer.eos_token]
+                elif random_index == 0:
+                    x_sequence = np.append(input_sequence, output_sequence[1:])
+                    y_index = output_sequence[1]
+                else:
+                    x_sequence = np.append(input_sequence, output_sequence[:random_index])
+                    y_index = output_sequence[random_index]
+
+        x, y = None, None
+        if x_sequence is not None and y_index is not None:
+            x = self.tokenizer.convert_sequence_to_padded_sequence(x_sequence, unk_dropout=self.cfg.unk_dropout if self.training else 0.0)
+            x = np.asarray(x).reshape((self.tokenizer.max_sequence_length,)).astype(np.int32)
+            y = int(y_index)
+        return x, y
+
+    def load_xy_into_q(self):
+        while self.q_thread_running:
+            if self.q_thread_pause:
+                sleep(1.0)
+            else:
+                x, y = self.load_xy()
+                if x is not None and y is not None:
+                    with self.lock:
+                        if len(self.q) == self.cfg.max_q_size:
+                            self.q.popleft()
+                        self.q.append((x, y))
 
     def get_json_paths(self, data_path):
         return glob(f'{data_path}/**/*.json', recursive=True)
@@ -151,55 +257,23 @@ class DataGenerator:
         self.prepared = True
 
     def load(self):
-        assert self.prepared
         batch_x, batch_y = [], []
-        batch_indices = np.random.choice(len(self.ds), self.cfg.batch_size, replace=False)
-        for i in batch_indices:
-            d = self.ds[i]
-            if d['type'] == 'text':
-                nl = d['content']
-                sequence = self.preprocess(nl, target='sequence', data_type='text')
-                random_index = np.random.randint(len(sequence))
-                if random_index == 0:
-                    x_sequence = sequence[:1]
-                    y = sequence[1]
-                elif random_index == len(sequence) - 1:
-                    x_sequence = sequence
-                    y = self.tokenizer.token_to_index_dict[self.tokenizer.eos_token]
-                else:
-                    x_sequence = sequence[:random_index]
-                    y = sequence[random_index]
-            elif d['type'] == 'dialogue':
-                dialogues = d['content']
-                dialogue_index = np.random.randint(len(dialogues))
-                dialogue = dialogues[dialogue_index]
-                input_nl = dialogue['input']
-                output_nl = dialogue['output']
-                input_sequence = self.preprocess(input_nl, target='sequence', data_type='dialogue_input')
-                output_sequence = self.preprocess(output_nl, target='sequence', data_type='dialogue_output')
-                random_index = np.random.randint(len(output_sequence))
-                if random_index == 0:
-                    x_sequence = np.append(input_sequence, output_sequence[1:])
-                    y = output_sequence[1]
-                elif random_index == len(output_sequence) - 1:
-                    x_sequence = np.append(input_sequence, output_sequence)
-                    y = self.tokenizer.token_to_index_dict[self.tokenizer.eos_token]
-                else:
-                    x_sequence = np.append(input_sequence, output_sequence[:random_index])
-                    y = output_sequence[random_index]
-            batch_x.append(self.tokenizer.convert_sequence_to_padded_sequence(x_sequence, unk_dropout=0.05 if self.training else 0.0))
-            batch_y.append(y)
-        batch_x = np.asarray(batch_x).astype(np.int32)
-        batch_y = np.asarray(batch_y).astype(np.int32)
+        for i in np.random.choice(self.q_indices, self.cfg.batch_size, replace=False):
+            with self.lock:
+                x, y = self.q[i]
+                batch_x.append(x)
+                batch_y.append(y)
+        batch_x = np.asarray(batch_x).reshape((self.cfg.batch_size, self.tokenizer.max_sequence_length)).astype(np.int32)
+        batch_y = np.asarray(batch_y).reshape((self.cfg.batch_size, 1)).astype(np.int32)
         return batch_x, batch_y
 
-    # def next_json_path(self):
-    #     json_path = self.json_paths[self.json_index]
-    #     self.json_index += 1
-    #     if self.json_index == len(self.json_paths):
-    #         self.json_index = 0
-    #         np.random.shuffle(self.json_paths)
-    #     return json_path
+    def next_json_path(self):
+        json_path = self.json_paths[self.json_index]
+        self.json_index += 1
+        if self.json_index == len(self.json_paths):
+            self.json_index = 0
+            np.random.shuffle(self.json_paths)
+        return json_path
 
     def evaluate_generator(self):
         assert self.prepared

@@ -164,8 +164,7 @@ class Tokenizer:
         d['index_to_token_dict'] = self.index_to_token_dict
         d['token_to_index_dict'] = self.token_to_index_dict
         with open(path, mode='wt', encoding='utf-8') as f:
-            json_str = json.dumps(d, indent=4)
-            f.writelines(json_str)
+            json.dump(d, f, ensure_ascii=True, indent=4)
 
     def convert_keys_to_int(self, d):
         new_dict = {}
