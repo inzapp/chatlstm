@@ -142,20 +142,20 @@ class ChatLSTM(CheckpointManager):
         return model(x, training=False)
 
     def predict(self, model, nl):
-        encoder_x = self.train_data_generator.preprocess(nl, target='sequence_pad')
+        encoder_x = self.train_data_generator.preprocess(nl, target='padded_sequence')
         encoder_x = np.asarray(encoder_x).reshape((1,) + encoder_x.shape)
         decoder_x = self.train_data_generator.tokenizer.get_bos_sequence()
         decoder_x = np.asarray(decoder_x).reshape((1,) + decoder_x.shape)
         output_nl = ''
         for i in range(self.train_data_generator.tokenizer.max_sequence_length - 1):
             y = self.graph_forward(model, [encoder_x, decoder_x])
-            index, word, end = self.train_data_generator.postprocess(np.array(y[0]))
+            index, token, end = self.train_data_generator.postprocess(np.array(y[0]))
             if end:
                 break
             if i == 0:
-                output_nl = f'{word}'
+                output_nl = f'{token}'
             else:
-                output_nl += f' {word}'
+                output_nl += f' {token}'
             decoder_x[0][i+1] = index
         return output_nl
 
@@ -171,7 +171,7 @@ class ChatLSTM(CheckpointManager):
     def evaluate(self, dataset='train', data_path='', chat=False, chat_auto=False, auto_count=10):
         assert dataset in ['train', 'validation']
         if chat:
-            self.train_data_generator.prepare(load_utterances=False)
+            self.train_data_generator.prepare(load_data=False)
             if chat_auto:
                 data_generator = self.train_data_generator
                 if dataset == 'validation':
@@ -207,7 +207,7 @@ class ChatLSTM(CheckpointManager):
                 self.train_data_generator.prepare()
                 data_generator = DataGenerator(
                     data_path=data_path,
-                    batch_size=self.batch_sze,
+                    batch_size=self.batch_size,
                     pretrained_model_output_size=self.pretrained_model_output_size,
                     pretrained_vocab_size=self.pretrained_vocab_size)
                 data_generator.prepare()

@@ -36,51 +36,28 @@ class Model:
         self.embedding_dim = embedding_dim
         self.recurrent_units = recurrent_units
         self.use_gru = use_gru
-        self.num_downsacling = int(np.ceil(self.max_sequence_length / 64)) - 1
+        self.sequence_downscaling_target = 64
 
     def build(self):
-        encoder_input, encoder_states = self.build_encoder()
-        decoder_input, decoder_output = self.build_decoder(encoder_states)
-        model = tf.keras.models.Model([encoder_input, decoder_input], decoder_output)
-        return model
-
-    def build_encoder(self):
         input_layer = tf.keras.layers.Input(shape=(self.max_sequence_length,))
         x = input_layer
-        x = self.embedding(x, input_dim=self.vocab_size, output_dim=self.embedding_dim)
-        x, scaled_recurrent_units = self.downscale_block(x)
-        if self.use_gru:
-            x, states = self.gru(x, units=scaled_recurrent_units, return_state=True)
-        else:
-            x, states = self.lstm(x, units=scaled_recurrent_units, return_state=True)
-        return input_layer, states
-
-    def build_decoder(self, encoder_states):
-        input_layer = tf.keras.layers.Input(shape=(self.max_sequence_length,))
-        x = input_layer
-        x = self.embedding(x, input_dim=self.vocab_size, output_dim=self.embedding_dim)
-        x, scaled_recurrent_units = self.downscale_block(x)
-        if self.use_gru:
-            x = self.gru(x, units=scaled_recurrent_units, initial_state=encoder_states)
-        else:
-            x = self.lstm(x, units=scaled_recurrent_units, initial_state=encoder_states)
+        x = tf.keras.layers.Embedding(input_dim=self.vocab_size, output_dim=self.embedding_dim)(x)
+        total_conv_count = 4
+        conv_filters = 256
+        sequence_length = self.max_sequence_length
+        for _ in range(total_conv_count):
+            if sequence_length <= self.sequence_downscaling_target:
+                strides = 1
+            else:
+                strides = 2
+                sequence_length /= 2
+            x = self.conv1d(x, conv_filters, 5, strides, activation='leaky')
+            conv_filters = min(conv_filters * 2, 1024)
+        x = self.conv1d(x, 128, 1, 1, activation='leaky')
+        x = self.lstm(x, units=128)
         output_layer = self.output_layer(x)
-        return input_layer, output_layer
-
-    def embedding(self, x, input_dim, output_dim):
-        return tf.keras.layers.Embedding(input_dim=input_dim, output_dim=output_dim)(x)
-
-    def downscale_block(self, x):
-        scaled_recurrent_units = self.recurrent_units
-        if self.num_downsacling == 0:
-            x = self.conv1d(x, self.embedding_dim, 5, 1, activation='leaky')
-        else:
-            conv_filters = self.embedding_dim
-            for _ in range(self.num_downsacling):
-                conv_filters = min(conv_filters * 2, 1024)
-                x = self.conv1d(x, conv_filters, 5, 2, activation='leaky')
-            scaled_recurrent_units = conv_filters
-        return x, scaled_recurrent_units
+        model = tf.keras.models.Model(input_layer, output_layer)
+        return model
 
     def conv1d(self, x, filters, kernel_size, strides, activation='leaky'):
         x = tf.keras.layers.Conv1D(
@@ -90,6 +67,7 @@ class Model:
             kernel_size=kernel_size,
             kernel_initializer=self.kernel_initializer(),
             kernel_regularizer=self.kernel_regularizer())(x)
+        x = tf.keras.layers.BatchNormalization()(x)
         return self.activation(x, activation)
 
     def lstm(self, x, units, initial_state=None, return_state=False):
@@ -112,8 +90,10 @@ class Model:
         return min(max(int(c * math.sqrt(self.vocab_size)), min_units), max_units)
 
     def output_layer(self, x):
-        x = tf.keras.layers.Dense(units=self.calculate_units(), kernel_initializer=self.kernel_initializer())(x)
-        x = self.activation(x, 'leaky')
+        # x = tf.keras.layers.Dense(units=self.calculate_units(), kernel_initializer=self.kernel_initializer())(x)
+        # x = tf.keras.layers.Dense(units=1024, kernel_initializer=self.kernel_initializer())(x)
+        # x = tf.keras.layers.BatchNormalization()(x)
+        # x = self.activation(x, 'leaky')
         return tf.keras.layers.Dense(units=self.vocab_size, kernel_initializer=self.kernel_initializer(), activation='softmax')(x)
 
     def kernel_initializer(self):

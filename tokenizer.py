@@ -25,68 +25,112 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 import json
+import konlpy
 import numpy as np
 
 
 class Tokenizer:
     def __init__(self):
-        self.tokens = []
-        self.index_word = {}
-        self.word_index = {}
+        self.index_to_token_dict = {}
+        self.token_to_index_dict = {}
         self.vocab_size = 0
         self.max_sequence_length = 0
-        self.pad_token = '([<PAD>])'
-        self.unk_token = '([<UNK>])'
-        self.bos_token = '([<BOS>])'
-        self.eos_token = '([<EOS>])'
-        self.special_tokens = [self.pad_token, self.unk_token, self.bos_token, self.eos_token]
+        self.pad_token = '<PAD>'
+        self.unk_token = '<UNK>'
+        self.bos_user_token = '<BOS_USER>'
+        self.bos_assistant_token = '<BOS_ASSISTANT>'
+        self.eos_token = '<EOS>'
+        self.bos_tokens = [self.bos_user_token, self.bos_assistant_token]
+        self.special_tokens = [self.pad_token, self.unk_token] + self.bos_tokens + [self.eos_token] + ['\n']
+        self.morph_analyzer = konlpy.tag.Hannanum()
+        self.bos_eos_token_margin = 16
         self.init()
 
     def remove_special_tokens(self, nl):
+        updated_count = 0
+        for special_token in self.special_tokens:
+            if nl.find(special_token) > -1:
+                nl = nl.replace(special_token, '')
+                updated_count += 1
+        return nl, updated_count
+
+    def replace_crlf_and_cr_to_lf(self, nl):
+        updated_count = 0
+        cr_chars = ['\r\n', '\r']
+        for cr_char in cr_chars:
+            if nl.find(cr_char) > -1:
+                nl = nl.replace(cr_char, '\n')
+                updated_count += 1
+        return nl, updated_count
+
+    def remove_duplicate_spaces(self, nl):
+        updated_count = 0
+        if nl.find('  ') > -1:
+            nl = nl.replace('  ', ' ')
+            updated_count += 1
+        return nl, updated_count
+
+    def remove_duplicate_lf(self, nl):
+        updated_count = 0
+        if nl.find('\n\n\n') > -1:
+            nl = nl.replace('\n\n\n', '\n\n')
+            updated_count += 1
+        return nl, updated_count
+
+    def preprocess(self, nl):
+        nl = nl.strip()
         while True:
-            cnt = 0
-            for special_token in self.special_tokens:
-                if nl.find(special_token) > -1:
-                    nl = nl.replace(special_token, '')
-                else:
-                    cnt += 1
-            if cnt == len(self.special_tokens):
+            uc_sum = 0
+            nl, uc = self.remove_special_tokens(nl)
+            uc_sum += uc
+            nl, uc = self.replace_crlf_and_cr_to_lf(nl)
+            uc_sum += uc
+            nl, uc = self.remove_duplicate_spaces(nl)
+            uc_sum += uc
+            nl, uc = self.remove_duplicate_lf(nl)
+            uc_sum += uc
+            if uc_sum == 0:
                 break
         return nl
 
     def add_token(self, token):
-        if not (token in self.word_index):
-            self.tokens.append(token)
-            self.index_word[self.vocab_size] = token
-            self.word_index[token] = self.vocab_size
+        if not (token in self.token_to_index_dict):
+            self.index_to_token_dict[self.vocab_size] = token
+            self.token_to_index_dict[token] = self.vocab_size
             self.vocab_size += 1
 
     def init(self):
-        self.tokens = []
-        self.index_word = {}
-        self.word_index = {}
+        self.index_to_token_dict = {}
+        self.token_to_index_dict = {}
         self.vocab_size = 0
         self.max_sequence_length = 0
         for special_token in self.special_tokens:
             self.add_token(special_token)
 
-    def fit_on_texts(self, words_list):
-        token_set = set()
-        for i in range(len(words_list)):
-            sequence_length = len(words_list[i]) + 2  # for bos, eos token
-            self.max_sequence_length = max(sequence_length, self.max_sequence_length)
-            for j in range(sequence_length):
-                token_set.add(words_list[i][j])
-        for token in list(token_set):
+    def update(self, nl):
+        nl = self.preprocess(nl)
+        tokens = self.convert_nl_to_tokens(nl)
+        sequence_length = len(tokens) + self.bos_eos_token_margin
+        self.max_sequence_length = max(sequence_length, self.max_sequence_length)
+        for token in tokens:
             self.add_token(token)
 
-    def update(self, words):
-        sequence_length = len(words) + 2  # for bos, ens token
-        self.max_sequence_length = max(sequence_length, self.max_sequence_length)
-        for word in words:
-            self.add_token(word)
+    def convert_nl_to_tokens(self, nl):
+        return self.morph_analyzer.morphs(nl)
 
-    def pad_sequence(self, sequence, unk_dropout=0.0):
+    def convert_tokens_to_sequence(self, tokens):
+        min_length = min(len(tokens), self.max_sequence_length)
+        sequence = []
+        for i in range(min_length):
+            try:
+                index = self.token_to_index_dict[tokens[i]]
+            except:
+                index = self.token_to_index_dict[self.unk_token]
+            sequence.append(index)
+        sequence = np.asarray(sequence).astype(np.int32)
+        return sequence
+
+    def convert_sequence_to_padded_sequence(self, sequence, unk_dropout=0.0):
         assert 0.0 <= unk_dropout <= 1.0
         sequence_padded = np.zeros(shape=(self.max_sequence_length,), dtype=np.int32)
         sequence_length = min(len(sequence), self.max_sequence_length)
@@ -95,53 +139,30 @@ class Tokenizer:
             unk_ratio = np.random.uniform() * unk_dropout
             unk_count = int(unk_ratio * sequence_length)
             unk_indices = np.random.choice(sequence_length, unk_count, replace=False)
-            sequence_padded[unk_indices] = self.word_index[self.unk_token]
+            sequence_padded[unk_indices] = self.token_to_index_dict[self.unk_token]
         return sequence_padded
 
-    def text_to_sequence(self, text):
-        min_length = min(len(text), self.max_sequence_length)
-        sequence = []
-        for i in range(min_length):
-            try:
-                index = self.word_index[text[i]]
-            except:
-                index = self.word_index[self.unk_token]
-            sequence.append(index)
-        sequence = np.asarray(sequence).astype(np.int32)
-        return sequence
-
-    def texts_to_sequences(self, texts):
-        sequences = []
-        for text in texts:
-            sequences.append(self.text_to_sequence(text))
-        return sequences
-
-    def sequence_to_text(self, sequence):
-        words = []
-        for i in range(len(sequence)):
-            if sequence[i] == self.bos_token:
-                continue
-            elif sequence[i] in [self.index_word[self.pad_token], self.index_word[self.end_token]]:
+    def convert_sequence_to_nl(self, sequence):
+        tokens = []
+        for token_index in sequence:
+            if token_index in [self.token_to_index_dict[end_token] for end_token in [self.eos_token, self.pad_token]]:
                 break
+            if token_index in [self.token_to_index_dict[bos_token] for bos_token in self.bos_tokens]:
+                continue
             try:
-                word = self.index_word[sequence[i]]
+                token = self.index_to_token_dict[token_index]
             except:
-                word = self.unk_token
-            words.append(word)
-        text = ' '.join(words)
-        return text
-
-    def get_bos_sequence(self):
-        sequence = np.zeros(shape=(self.max_sequence_length,), dtype=np.int32)
-        sequence[0] = self.word_index[self.bos_token]
-        return sequence
+                token = self.unk_token
+            tokens.append(token)
+        nl = ' '.join(tokens)
+        return nl
 
     def save(self, path):
         d = {}
         d['vocab_size'] = self.vocab_size
         d['max_sequence_length'] = self.max_sequence_length
-        d['index_word'] = self.index_word
-        d['word_index'] = self.word_index
+        d['index_to_token_dict'] = self.index_to_token_dict
+        d['token_to_index_dict'] = self.token_to_index_dict
         with open(path, mode='wt', encoding='utf-8') as f:
             json_str = json.dumps(d, indent=4)
             f.writelines(json_str)
@@ -163,8 +184,8 @@ class Tokenizer:
             d = json.load(f)
         self.vocab_size = int(d['vocab_size'])
         self.max_sequence_length = int(d['max_sequence_length'])
-        self.index_word = d['index_word']
-        self.word_index = d['word_index']
-        self.index_word = self.convert_keys_to_int(self.index_word)
-        self.word_index = self.convert_values_to_int(self.word_index)
+        self.index_to_token_dict = d['index_to_token_dict']
+        self.token_to_index_dict = d['token_to_index_dict']
+        self.index_to_token_dict = self.convert_keys_to_int(self.index_to_token_dict)
+        self.token_to_index_dict = self.convert_values_to_int(self.token_to_index_dict)
 
