@@ -141,14 +141,22 @@ class ChatLSTM(CheckpointManager):
     def graph_forward(model, x):
         return model(x, training=False)
 
-    def predict(self, model, nl):
-        encoder_x = self.train_data_generator.preprocess(nl, target='padded_sequence')
-        encoder_x = np.asarray(encoder_x).reshape((1,) + encoder_x.shape)
-        decoder_x = self.train_data_generator.tokenizer.get_bos_sequence()
-        decoder_x = np.asarray(decoder_x).reshape((1,) + decoder_x.shape)
+    def predict(self, model, nl, data_type):
+        assert data_type in ['text', 'dialogue']
+        if data_type == 'text':
+            sequence = self.train_data_generator.preprocess(nl, target='sequence', data_type='text')
+            x = self.train_data_generator.tokenizer.convert_sequence_to_padded_sequence(sequence)
+        else:
+            sequence = self.train_data_generator.preprocess(nl, target='sequence', data_type='dialogue_input')
+            sequence = np.append(sequence, self.train_data_generator.tokenizer.token_to_index_dict[self.train_data_generator.tokenizer.bos_assistant_token])
+            x = self.train_data_generator.tokenizer.convert_sequence_to_padded_sequence(sequence)
+        x = np.asarray(x).reshape((1,) + x.shape)
+        sequence_length = len(sequence)
+
         output_nl = ''
-        for i in range(self.train_data_generator.tokenizer.max_sequence_length - 1):
-            y = self.graph_forward(model, [encoder_x, decoder_x])
+        max_length = self.train_data_generator.tokenizer.max_sequence_length - self.train_data_generator.tokenizer.bos_eos_token_margin - sequence_length
+        for i in range(max_length):
+            y = self.graph_forward(model, x)
             index, token, end = self.train_data_generator.postprocess(np.array(y[0]))
             if end:
                 break
@@ -156,7 +164,7 @@ class ChatLSTM(CheckpointManager):
                 output_nl = f'{token}'
             else:
                 output_nl += f' {token}'
-            decoder_x[0][i+1] = index
+            x[0][sequence_length+i] = index
         return output_nl
 
     def compile(self, model):
@@ -164,7 +172,7 @@ class ChatLSTM(CheckpointManager):
         model.compile(optimizer=self.optimizer, loss=self.loss_fn, metrics=[metric])
 
     def get_output_size_and_vocab_size_from_model(self, model):
-        output_size = model.input_shape[-1][-1]
+        output_size = model.input_shape[-1]
         vocab_size = model.output_shape[-1]
         return output_size, vocab_size
 
@@ -178,20 +186,33 @@ class ChatLSTM(CheckpointManager):
                     self.validation_data_generator.tokenizer = self.train_data_generator.tokenizer
                     data_generator = self.validation_data_generator
                 print('chat start\n')
-                for json_path in data_generator.json_paths[:auto_count]:
-                    d = data_generator.load_json(json_path)
-                    nls = data_generator.parse_utterance_nls(d)
-                    print(f'You : {nls[0]}')
-                    output_nl = self.predict(self.model, nls[0])
-                    print(f'GT : {nls[1]}')
-                    print(f'AI : {output_nl}\n')
+                i = 0
+                valid_type_chat_count = 0
+                while True:
+                    json_path = data_generator.json_paths[i]
+                    d, _ = data_generator.load_json(json_path)
+                    if d['type'] == 'dialogue':
+                        if i > 0:
+                            print()
+                        dialogues = d['content']
+                        dialogue = dialogues[0]
+                        input_nl = dialogue['input']
+                        output_nl = dialogue['output']
+                        print(f'You : {input_nl}')
+                        generated_nl = self.predict(self.model, input_nl, data_type='dialogue')
+                        print(f'GT : {output_nl}')
+                        print(f'AI : {generated_nl}')
+                        valid_type_chat_count += 1
+                        if valid_type_chat_count == auto_count:
+                            break
+                    i += 1
             else:
                 print('chat start\n')
                 while True:
                     nl = input('You : ')
                     if nl == 'q':
                         exit(0)
-                    output_nl = self.predict(self.model, nl)
+                    output_nl = self.predict(self.model, nl, data_type='dialogue')
                     print(f'AI : {output_nl}\n')
         else:
             data_generator = None
@@ -213,19 +234,13 @@ class ChatLSTM(CheckpointManager):
                 data_generator.prepare()
                 data_generator.tokenizer = self.train_data_generator.tokenizer  # use trained tokenzer for validation
             self.compile(self.model)
-            bos_ret = self.model.evaluate(
-                x=data_generator.evaluate_generator(evaluate_bos=True),
+            ret = self.model.evaluate(
+                x=data_generator.evaluate_generator(),
                 batch_size=self.batch_size,
                 return_dict=True)
-            bos_acc = bos_ret['top_5_acc']
-            random_ret = self.model.evaluate(
-                x=data_generator.evaluate_generator(evaluate_bos=False),
-                batch_size=self.batch_size,
-                return_dict=True)
-            random_acc = random_ret['top_5_acc']
-            acc_hm = (bos_acc * random_acc * 2.0) / (bos_acc + random_acc + 1e-7)
-            print(f'bos_acc : {bos_acc:.4f}, random_acc : {random_acc:.4f}, acc_hm : {acc_hm:.4f}')
-            return bos_acc, random_acc, acc_hm
+            acc = ret['top_5_acc']
+            print(f'accuracy : {acc:.4f}')
+            return acc
 
     def print_loss(self, progress_str, loss):
         loss_str = f'\r{progress_str}'
@@ -269,9 +284,9 @@ class ChatLSTM(CheckpointManager):
                 self.save_last_model(self.model, iteration_count)
             if iteration_count % self.save_interval == 0:
                 print()
-                bos_acc, random_acc, acc_hm = self.evaluate()
-                content = f'_bos_acc_{bos_acc:.4f}_random_acc_{random_acc:.4f}'
-                self.save_best_model(self.model, iteration_count, content=content, metric=acc_hm)
+                acc = self.evaluate()
+                content = f'_acc_{acc:.4f}'
+                self.save_best_model(self.model, iteration_count, content=content, metric=acc)
                 print()
             if iteration_count == self.iterations:
                 print('train end successfully')

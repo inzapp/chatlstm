@@ -155,7 +155,7 @@ class DataGenerator:
                 assert self.pretrained_model_output_size == data_max_sequence_length, msg
         self.prepared = True
 
-    def load(self, evaluate_bos=False):
+    def load(self):
         assert self.prepared
         batch_x, batch_y = [], []
         batch_indices = np.random.choice(len(self.ds), self.batch_size, replace=False)
@@ -206,10 +206,10 @@ class DataGenerator:
     #         np.random.shuffle(self.json_paths)
     #     return json_path
 
-    def evaluate_generator(self, evaluate_bos):
+    def evaluate_generator(self):
         assert self.prepared
         for _ in range(len(self.ds) // self.batch_size):
-            yield self.load(evaluate_bos=evaluate_bos)
+            yield self.load()
 
     def preprocess(self, nl, target, data_type):
         assert target in ['tokens', 'sequence', 'padded_sequence']
