@@ -37,14 +37,9 @@ from concurrent.futures.thread import ThreadPoolExecutor
 
 
 class DataGenerator:
-    def __init__(self,
-                 data_path,
-                 batch_size,
-                 pretrained_model_output_size=0,
-                 pretrained_vocab_size=0,
-                 training=False):
+    def __init__(self, cfg, data_path, pretrained_model_output_size=0, pretrained_vocab_size=0, training=False):
+        self.cfg = cfg
         self.data_path = data_path
-        self.batch_size = batch_size
         self.training = training
         self.pretrained_model_output_size = pretrained_model_output_size
         self.pretrained_vocab_size = pretrained_vocab_size
@@ -55,7 +50,7 @@ class DataGenerator:
         self.json_paths = self.get_json_paths(self.data_path)
         self.json_index = 0
         np.random.shuffle(self.json_paths)
-        assert len(self.json_paths) > 0, f'json data not found : {self.data_path}'
+        assert len(self.json_paths) > 0, f'json data not found : {self.cfg.data_path}'
 
     def get_json_paths(self, data_path):
         return glob(f'{data_path}/**/*.json', recursive=True)
@@ -80,10 +75,10 @@ class DataGenerator:
         if self.prepared:
             return
 
-        cache_file_path = f'{self.data_path}/data.cache'
+        tokenizer_file_path = f'{self.data_path}/tokenizer.data'
         if not load_data:
-            if self.is_file_valid(cache_file_path):
-                self.tokenizer.load(cache_file_path)
+            if self.is_file_valid(tokenizer_file_path):
+                self.tokenizer.load(tokenizer_file_path)
             else:
                 load_data = True
 
@@ -142,7 +137,7 @@ class DataGenerator:
 
                 else:
                     print(f'invalid data_type "{data_type}" : {path}')
-            self.tokenizer.save(cache_file_path)
+            self.tokenizer.save(tokenizer_file_path)
 
         data_vocab_size = self.tokenizer.vocab_size
         data_model_output_size = data_vocab_size + self.tokenizer.bos_eos_token_margin
@@ -158,7 +153,7 @@ class DataGenerator:
     def load(self):
         assert self.prepared
         batch_x, batch_y = [], []
-        batch_indices = np.random.choice(len(self.ds), self.batch_size, replace=False)
+        batch_indices = np.random.choice(len(self.ds), self.cfg.batch_size, replace=False)
         for i in batch_indices:
             d = self.ds[i]
             if d['type'] == 'text':
@@ -208,7 +203,7 @@ class DataGenerator:
 
     def evaluate_generator(self):
         assert self.prepared
-        for _ in range(len(self.ds) // self.batch_size):
+        for _ in range(len(self.ds) // self.cfg.batch_size):
             yield self.load()
 
     def preprocess(self, nl, target, data_type):

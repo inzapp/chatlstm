@@ -30,18 +30,16 @@ import tensorflow as tf
 
 
 class Model:
-    def __init__(self, max_sequence_length, vocab_size, embedding_dim, recurrent_units, use_gru):
+    def __init__(self, cfg, max_sequence_length, vocab_size):
+        self.cfg = cfg
         self.max_sequence_length = max_sequence_length
         self.vocab_size = vocab_size
-        self.embedding_dim = embedding_dim
-        self.recurrent_units = recurrent_units
-        self.use_gru = use_gru
         self.sequence_downscaling_target = 64
 
     def build(self):
         input_layer = tf.keras.layers.Input(shape=(self.max_sequence_length,))
         x = input_layer
-        x = tf.keras.layers.Embedding(input_dim=self.vocab_size, output_dim=self.embedding_dim)(x)
+        x = tf.keras.layers.Embedding(input_dim=self.vocab_size, output_dim=self.cfg.embedding_dim)(x)
         total_conv_count = 4
         conv_filters = 256
         sequence_length = self.max_sequence_length
@@ -53,8 +51,11 @@ class Model:
                 sequence_length /= 2
             x = self.conv1d(x, conv_filters, 5, strides, activation='leaky')
             conv_filters = min(conv_filters * 2, 1024)
-        x = self.conv1d(x, 128, 1, 1, activation='leaky')
-        x = self.lstm(x, units=128)
+        x = self.conv1d(x, self.cfg.recurrent_units, 1, 1, activation='leaky')
+        if self.cfg.use_gru:
+            x = self.gru(x, units=self.cfg.recurrent_units)
+        else:
+            x = self.lstm(x, units=self.cfg.recurrent_units)
         output_layer = self.output_layer(x)
         model = tf.keras.models.Model(input_layer, output_layer)
         return model
@@ -94,6 +95,8 @@ class Model:
         # x = tf.keras.layers.Dense(units=1024, kernel_initializer=self.kernel_initializer())(x)
         # x = tf.keras.layers.BatchNormalization()(x)
         # x = self.activation(x, 'leaky')
+        if self.cfg.dropout < 0.0 <= 1.0:
+            x = tf.keras.layers.Dropout(self.cfg.dropout)(x)
         return tf.keras.layers.Dense(units=self.vocab_size, kernel_initializer=self.kernel_initializer(), activation='softmax')(x)
 
     def kernel_initializer(self):
