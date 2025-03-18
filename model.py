@@ -71,13 +71,27 @@ class Model:
         return self.activation(x, activation)
 
     def lstm(self, x, units):
-        x = tf.keras.layers.LSTM(units=self.cfg.recurrent_units, return_sequences=True)(x)
-        x = tf.keras.layers.LSTM(units=64, return_sequences=True)(x)
+        x = tf.keras.layers.LSTM(
+            units=self.cfg.recurrent_units,
+            kernel_regularizer=self.kernel_regularizer(),
+            recurrent_regularizer=self.kernel_regularizer(),
+            return_sequences=True)(x)
+        x = tf.keras.layers.LSTM(units=64,
+            kernel_regularizer=self.kernel_regularizer(),
+            recurrent_regularizer=self.kernel_regularizer(),
+            return_sequences=True)(x)
         return x
 
     def gru(self, x, units):
-        x = tf.keras.layers.GRU(units=self.cfg.recurrent_units, return_sequences=True)(x)
-        x = tf.keras.layers.GRU(units=64, return_sequences=True)(x)
+        x = tf.keras.layers.GRU(
+            units=self.cfg.recurrent_units,
+            kernel_regularizer=self.kernel_regularizer(),
+            recurrent_regularizer=self.kernel_regularizer(),
+            return_sequences=True)(x)
+        x = tf.keras.layers.GRU(units=64,
+            kernel_regularizer=self.kernel_regularizer(),
+            recurrent_regularizer=self.kernel_regularizer(),
+            return_sequences=True)(x)
         return x
 
     def output_layer(self, x):
@@ -86,7 +100,7 @@ class Model:
         return tf.keras.layers.Dense(units=self.vocab_size, kernel_initializer=self.kernel_initializer(), activation='softmax')(x)
 
     def kernel_initializer(self):
-        return tf.keras.initializers.he_normal()
+        return tf.keras.initializers.he_normal() if self.cfg.l2 > 0.0 else None
 
     def kernel_regularizer(self, l2=0.0005):
         return tf.keras.regularizers.l2(l2=l2)
