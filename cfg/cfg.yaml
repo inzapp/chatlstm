@@ -15,7 +15,8 @@ warm_up: 1000
 momentum: 0.9
 smoothing: 0.0
 embedding_dim: 128
-recurrent_units: 256
+max_conv_filters: 4096
+recurrent_units: 1024
 batch_size: 32
 max_q_size: 4096
 iterations: 10000

@@ -49,7 +49,7 @@ class Model:
                 strides = 2
                 sequence_length /= 2
             x = self.conv1d(x, conv_filters, 5, strides, activation='leaky')
-            conv_filters = min(conv_filters * 2, 4096)
+            conv_filters = min(conv_filters * 2, self.cfg.max_conv_filters)
         x = self.conv1d(x, self.cfg.recurrent_units, 1, 1, activation='leaky')
         if self.cfg.use_gru:
             x = self.gru(x, units=self.cfg.recurrent_units)
