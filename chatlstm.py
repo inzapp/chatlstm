@@ -85,6 +85,7 @@ class TrainingConfig:
         d = {}
         d['devices'] = self.__get_value_from_yaml(cfg, 'devices', [0], list, required=False)
         d['pretrained_model_path'] = self.__get_value_from_yaml(cfg, 'pretrained_model_path', None, str, required=False)
+        d['pretrained_tokenizer_path'] = self.__get_value_from_yaml(cfg, 'pretrained_tokenizer_path', None, str, required=False)
         d['train_data_path'] = self.__get_value_from_yaml(cfg, 'train_data_path', None, str, required=True)
         d['validation_data_path'] = self.__get_value_from_yaml(cfg, 'validation_data_path', None, str, required=True)
         d['model_name'] = self.__get_value_from_yaml(cfg, 'model_name', 'model', str, required=False)
@@ -279,7 +280,8 @@ class ChatLSTM(CheckpointManager):
 
     def init_checkpoint_dir_extra(self):
         self.cfg.save(f'{self.checkpoint_path}/cfg.yaml')
-        sh.copy(f'{self.cfg.train_data_path}/tokenizer.data', f'{self.checkpoint_path}/tokenizer.data')
+        file_name = self.train_data_generator.tokenizer.default_file_name
+        sh.copy(f'{self.cfg.train_data_path}/{file_name}', f'{self.checkpoint_path}/{file_name}')
 
     def print_loss(self, progress_str, loss):
         loss_str = f'\r{progress_str}'

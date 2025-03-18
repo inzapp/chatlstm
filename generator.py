@@ -182,9 +182,13 @@ class DataGenerator:
         if self.tokenizer.is_loaded:
             return
         else:
-            tokenizer_file_path = f'{self.data_path}/tokenizer.data'
-            if self.is_file_valid(tokenizer_file_path):
-                self.tokenizer.load(tokenizer_file_path)
+            if self.cfg.pretrained_tokenizer_path is not None and self.is_file_valid(self.cfg.pretrained_tokenizer_path):
+                self.tokenizer.load(self.cfg.pretrained_tokenizer_path)
+                return
+
+            data_tokenizer_file_path = f'{self.data_path}/{self.tokenizer.default_file_name}'
+            if self.is_file_valid(data_tokenizer_file_path):
+                self.tokenizer.load(data_tokenizer_file_path)
                 return
 
             fs = []
@@ -204,7 +208,7 @@ class DataGenerator:
                             output_nl = dialogue['output']
                             self.tokenizer.update(input_nl)
                             self.tokenizer.update(output_nl)
-            self.tokenizer.save(tokenizer_file_path)
+            self.tokenizer.save(data_tokenizer_file_path)
 
     def load_xy(self):
         json_path = self.next_json_path()
