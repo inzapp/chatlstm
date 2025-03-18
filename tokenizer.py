@@ -30,8 +30,8 @@ import numpy as np
 
 
 class Tokenizer:
+    default_file_name = 'tokenizer.data'
     def __init__(self):
-        self.default_file_name = 'tokenizer.data'
         self.index_to_token_dict = {}
         self.token_to_index_dict = {}
         self.vocab_size = 0

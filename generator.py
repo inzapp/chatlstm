@@ -186,7 +186,7 @@ class DataGenerator:
                 self.tokenizer.load(self.cfg.pretrained_tokenizer_path)
                 return
 
-            data_tokenizer_file_path = f'{self.data_path}/{self.tokenizer.default_file_name}'
+            data_tokenizer_file_path = f'{self.data_path}/{Tokenizer.default_file_name}'
             if self.is_file_valid(data_tokenizer_file_path):
                 self.tokenizer.load(data_tokenizer_file_path)
                 return

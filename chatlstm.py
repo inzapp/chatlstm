@@ -45,6 +45,7 @@ import shutil as sh
 
 from model import Model
 from eta import ETACalculator
+from tokenizer import Tokenizer
 from generator import DataGenerator
 from lr_scheduler import LRScheduler
 from ckpt_manager import CheckpointManager
@@ -119,7 +120,7 @@ class TrainingConfig:
 
 
 class ChatLSTM(CheckpointManager):
-    def __init__(self, cfg, evaluate):
+    def __init__(self, cfg, evaluate=False):
         super().__init__()
         assert cfg.max_q_size >= cfg.batch_size
         self.cfg = cfg
@@ -220,67 +221,68 @@ class ChatLSTM(CheckpointManager):
         vocab_size = model.output_shape[-1]
         return output_size, vocab_size
 
-    def evaluate(self, dataset='train', chat=False, chat_auto=False, auto_count=10):
+    def chat(self, auto=False, auto_count=10, dataset='train'):
         assert dataset in ['train', 'validation']
-        if chat:
-            self.train_data_generator.load_tokenizer()
-            if chat_auto:
-                data_generator = self.train_data_generator
-                if dataset == 'validation':
-                    data_generator = self.validation_data_generator
-                    data_generator.tokenizer = self.train_data_generator.tokenizer
-                print('chat start\n')
-                i = 0
-                valid_type_chat_count = 0
-                while True:
-                    json_path = data_generator.json_paths[i]
-                    d, path = data_generator.load_json(json_path)
-                    if data_generator.is_json_data_valid(d, path) and d['type'] == 'dialogue':
-                        if i > 0:
-                            print()
-                        dialogues = d['content']
-                        dialogue = dialogues[0]
-                        input_nl = dialogue['input']
-                        output_nl = dialogue['output']
-                        print(f'You : {input_nl}')
-                        generated_nl = self.predict(self.model, input_nl, data_type='dialogue')
-                        print(f'GT : {output_nl}')
-                        print(f'AI : {generated_nl}')
-                        valid_type_chat_count += 1
-                        if valid_type_chat_count == auto_count:
-                            break
-                    i += 1
-                    if i == len(data_generator.json_paths) or i > 300:
-                        if i > 300:
-                            print(f'dialogue type data not found in 300 json... maybe not exists?')
-                        break
-            else:
-                print('chat start\n')
-                while True:
-                    nl = input('You : ')
-                    if nl == 'q':
-                        exit(0)
-                    output_nl = self.predict(self.model, nl, data_type='dialogue')
-                    print(f'AI : {output_nl}\n')
-        else:
-            self.train_data_generator.load_tokenizer()
-            if dataset == 'train':
-                data_generator = self.train_data_generator
-            else:
-                self.validation_data_generator.load_tokenizer()
-                self.validation_data_generator.tokenizer = self.train_data_generator.tokenizer  # use trained tokenizer for validation
+        self.train_data_generator.load_tokenizer()
+        if auto:
+            data_generator = self.train_data_generator
+            if dataset == 'validation':
                 data_generator = self.validation_data_generator
-            self.compile(self.model)
-            ret = self.model.evaluate(
-                x=data_generator.evaluate_generator(),
-                batch_size=self.cfg.batch_size,
-                return_dict=True)
-            acc = ret['top_5_acc']
-            return acc
+                data_generator.tokenizer = self.train_data_generator.tokenizer
+            print('chat start\n')
+            i = 0
+            valid_type_chat_count = 0
+            while True:
+                json_path = data_generator.json_paths[i]
+                d, path = data_generator.load_json(json_path)
+                if data_generator.is_json_data_valid(d, path) and d['type'] == 'dialogue':
+                    if i > 0:
+                        print()
+                    dialogues = d['content']
+                    dialogue = dialogues[0]
+                    input_nl = dialogue['input']
+                    output_nl = dialogue['output']
+                    print(f'You : {input_nl}')
+                    generated_nl = self.predict(self.model, input_nl, data_type='dialogue')
+                    print(f'GT : {output_nl}')
+                    print(f'AI : {generated_nl}')
+                    valid_type_chat_count += 1
+                    if valid_type_chat_count == auto_count:
+                        break
+                i += 1
+                if i == len(data_generator.json_paths) or i > 300:
+                    if i > 300:
+                        print(f'dialogue type data not found in 300 json... maybe not exists?')
+                    break
+        else:
+            print('chat start\n')
+            while True:
+                nl = input('You : ')
+                if nl == 'q':
+                    exit(0)
+                output_nl = self.predict(self.model, nl, data_type='dialogue')
+                print(f'AI : {output_nl}\n')
+
+    def evaluate(self, dataset='train'):
+        assert dataset in ['train', 'validation']
+        self.train_data_generator.load_tokenizer()
+        if dataset == 'train':
+            data_generator = self.train_data_generator
+        else:
+            self.validation_data_generator.load_tokenizer()
+            self.validation_data_generator.tokenizer = self.train_data_generator.tokenizer  # use trained tokenizer for validation
+            data_generator = self.validation_data_generator
+        self.compile(self.model)
+        ret = self.model.evaluate(
+            x=data_generator.evaluate_generator(),
+            batch_size=self.cfg.batch_size,
+            return_dict=True)
+        acc = ret['top_5_acc']
+        return acc
 
     def init_checkpoint_dir_extra(self):
         self.cfg.save(f'{self.checkpoint_path}/cfg.yaml')
-        file_name = self.train_data_generator.tokenizer.default_file_name
+        file_name = Tokenizer.default_file_name
         sh.copy(f'{self.cfg.train_data_path}/{file_name}', f'{self.checkpoint_path}/{file_name}')
 
     def print_loss(self, progress_str, loss):

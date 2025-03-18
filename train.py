@@ -33,21 +33,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', type=str, default='cfg/cfg.yaml', help='path of training configuration file')
     parser.add_argument('--model', type=str, default='', help='pretrained model path')
-    parser.add_argument('--evaluate', action='store_true', help='evaluate using given dataset')
-    parser.add_argument('--chat', action='store_true', help='chat in cli with pretrained model')
-    parser.add_argument('--auto', action='store_true', help='auto chat flag using train data')
-    parser.add_argument('--auto-count', type=int, default=10, help='auto chat count')
-    parser.add_argument('--dataset', type=str, default='train', help='dataset for evaluate, train or validation available')
-    parser.add_argument('--path', type=str, default='', help='json data path for prediction or evaluation')
     args = parser.parse_args()
     cfg = TrainingConfig(cfg_path=args.cfg)
     if args.model != '':
         cfg.set_config('pretrained_model_path', args.model)
-    if args.path != '':
-        cfg.set_config('validation_data_path', args.path)
-    chatlstm = ChatLSTM(cfg=cfg, evaluate=args.evaluate)
-    if args.evaluate:
-        chatlstm.evaluate(dataset='validation' if args.path != '' else args.dataset, chat=args.chat, chat_auto=args.auto, auto_count=args.auto_count)
-    else:
-        chatlstm.train()
+    chatlstm = ChatLSTM(cfg=cfg)
+    chatlstm.train()
 
