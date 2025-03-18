@@ -40,17 +40,16 @@ class Model:
         input_layer = tf.keras.layers.Input(shape=(self.max_sequence_length,))
         x = input_layer
         x = tf.keras.layers.Embedding(input_dim=self.vocab_size, output_dim=self.cfg.embedding_dim)(x)
-        total_conv_count = 4
-        conv_filters = 256
+        conv_filters = self.cfg.embedding_dim * 2
         sequence_length = self.max_sequence_length
-        for _ in range(total_conv_count):
+        for _ in range(5):
             if sequence_length <= self.sequence_downscaling_target:
                 strides = 1
             else:
                 strides = 2
                 sequence_length /= 2
             x = self.conv1d(x, conv_filters, 5, strides, activation='leaky')
-            conv_filters = min(conv_filters * 2, 1024)
+            conv_filters = min(conv_filters * 2, 4096)
         x = self.conv1d(x, self.cfg.recurrent_units, 1, 1, activation='leaky')
         if self.cfg.use_gru:
             x = self.gru(x, units=self.cfg.recurrent_units)
