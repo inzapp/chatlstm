@@ -36,13 +36,19 @@ class Model:
         self.vocab_size = vocab_size
         self.sequence_downscaling_target = 64
 
+    def min_division_step(self, n, target, max_step=10):
+        for i in range(max_step):
+            if n / (2 ** i) <= target:
+                return i
+        return max_step
+
     def build(self):
         input_layer = tf.keras.layers.Input(shape=(self.max_sequence_length,))
         x = input_layer
         x = tf.keras.layers.Embedding(input_dim=self.vocab_size, output_dim=self.cfg.embedding_dim)(x)
         conv_filters = self.cfg.embedding_dim * 2
         sequence_length = self.max_sequence_length
-        for _ in range(5):
+        for _ in range(max(5, self.min_division_step(self.max_sequence_length, self.sequence_downscaling_target))):
             if sequence_length <= self.sequence_downscaling_target:
                 strides = 1
             else:
