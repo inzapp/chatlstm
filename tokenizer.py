@@ -43,7 +43,8 @@ class Tokenizer:
         self.eos_token = '<EOS>'
         self.bos_tokens = [self.bos_user_token, self.bos_assistant_token]
         self.special_tokens = [self.pad_token, self.unk_token] + self.bos_tokens + [self.eos_token] + ['\n']
-        self.morph_analyzer = konlpy.tag.Hannanum()
+        # self.morph_analyzer = konlpy.tag.Hannanum()
+        self.morph_analyzer = konlpy.tag.Mecab()
         self.bos_eos_token_margin = 16
         self.init()
         self.is_loaded = False
