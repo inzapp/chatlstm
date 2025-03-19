@@ -168,7 +168,7 @@ class Tokenizer:
         d['token_to_index_dict'] = self.token_to_index_dict
         with open(path, mode='wt', encoding='utf-8') as f:
             json.dump(d, f, ensure_ascii=True, indent=4)
-        self.is_loaded = True
+        self.load(path)
 
     def convert_keys_to_int(self, d):
         new_dict = {}
@@ -186,10 +186,11 @@ class Tokenizer:
         with open(path, mode='rt', encoding='utf-8') as f:
             d = json.load(f)
         self.vocab_size = int(d['vocab_size'])
-        self.max_sequence_length = int(d['max_sequence_length'])
+        self.max_sequence_length = int(d['max_sequence_length']) * 2 * 2
         self.index_to_token_dict = d['index_to_token_dict']
         self.token_to_index_dict = d['token_to_index_dict']
         self.index_to_token_dict = self.convert_keys_to_int(self.index_to_token_dict)
         self.token_to_index_dict = self.convert_values_to_int(self.token_to_index_dict)
         self.is_loaded = True
+        print(f'load tokenizer success : {path}')
 

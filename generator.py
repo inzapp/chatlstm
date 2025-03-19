@@ -233,21 +233,29 @@ class DataGenerator:
         elif d['type'] == 'dialogue':
             dialogues = d['content']
             dialogue_index = np.random.randint(len(dialogues))
-            dialogue = dialogues[dialogue_index]
-            input_nl = dialogue['input']
-            output_nl = dialogue['output']
-            input_sequence = self.preprocess(input_nl, target='sequence', data_type='dialogue_input')
-            output_sequence = self.preprocess(output_nl, target='sequence', data_type='dialogue_output')
-            random_index = np.random.randint(len(output_sequence))
-            if random_index == len(output_sequence) - 1:
-                x_sequence = np.append(input_sequence, output_sequence)
-                y_index = self.tokenizer.token_to_index_dict[self.tokenizer.eos_token]
-            elif random_index == 0:
-                x_sequence = np.append(input_sequence, output_sequence[1:])
-                y_index = output_sequence[1]
-            else:
-                x_sequence = np.append(input_sequence, output_sequence[:random_index])
-                y_index = output_sequence[random_index]
+            input_sequence = np.array([], dtype=np.int32)
+            output_sequence = np.array([], dtype=np.int32)
+            for i in range(max(dialogue_index - 2, 0), dialogue_index + 1, 1):
+                dialogue = dialogues[i]
+                cur_input_nl = dialogue['input']
+                cur_output_nl = dialogue['output']
+                cur_input_sequence = self.preprocess(cur_input_nl, target='sequence', data_type='dialogue_input')
+                cur_output_sequence = self.preprocess(cur_output_nl, target='sequence', data_type='dialogue_output')
+                if i < dialogue_index:
+                    input_sequence = np.append(input_sequence, cur_input_sequence)
+                    input_sequence = np.append(input_sequence, cur_output_sequence)
+                else:
+                    input_sequence = np.append(input_sequence, cur_input_sequence)
+                    random_index = np.random.randint(len(cur_output_sequence))
+                    if random_index == len(cur_output_sequence) - 1:
+                        x_sequence = np.append(input_sequence, cur_output_sequence)
+                        y_index = self.tokenizer.token_to_index_dict[self.tokenizer.eos_token]
+                    elif random_index == 0:
+                        x_sequence = np.append(input_sequence, cur_output_sequence[1:])
+                        y_index = cur_output_sequence[1]
+                    else:
+                        x_sequence = np.append(input_sequence, cur_output_sequence[:random_index])
+                        y_index = cur_output_sequence[random_index]
 
         x, y = None, None
         if x_sequence is not None and y_index is not None:

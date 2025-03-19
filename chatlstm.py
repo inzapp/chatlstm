@@ -187,13 +187,15 @@ class ChatLSTM(CheckpointManager):
     def graph_forward(model, x):
         return model(x, training=False)
 
-    def predict(self, model, nl, data_type):
+    def predict(self, model, data_type, nl=None, sequence=None):
         assert data_type in ['text', 'dialogue']
         if data_type == 'text':
-            sequence = self.train_data_generator.preprocess(nl, target='sequence', data_type='text')
+            if nl is not None:
+                sequence = self.train_data_generator.preprocess(nl, target='sequence', data_type='text')
             x = self.train_data_generator.tokenizer.convert_sequence_to_padded_sequence(sequence)
         else:
-            sequence = self.train_data_generator.preprocess(nl, target='sequence', data_type='dialogue_input')
+            if nl is not None:
+                sequence = self.train_data_generator.preprocess(nl, target='sequence', data_type='dialogue_input')
             sequence = np.append(sequence, self.train_data_generator.tokenizer.token_to_index_dict[self.train_data_generator.tokenizer.bos_assistant_token])
             x = self.train_data_generator.tokenizer.convert_sequence_to_padded_sequence(sequence)
         x = np.asarray(x).reshape((1,) + x.shape)
@@ -231,38 +233,52 @@ class ChatLSTM(CheckpointManager):
                 data_generator = self.validation_data_generator
                 data_generator.tokenizer = self.train_data_generator.tokenizer
             print('chat start\n')
-            i = 0
+            inc = 0
             valid_type_chat_count = 0
             while True:
-                json_path = data_generator.json_paths[i]
+                json_path = data_generator.json_paths[inc]
                 d, path = data_generator.load_json(json_path)
                 if data_generator.is_json_data_valid(d, path) and d['type'] == 'dialogue':
-                    if i > 0:
-                        print()
+                    if inc > 0:
+                        print('\n' + ('=' * 128) + '\n')
                     dialogues = d['content']
-                    dialogue = dialogues[0]
-                    input_nl = dialogue['input']
-                    output_nl = dialogue['output']
-                    print(f'👤 User : {input_nl}')
-                    generated_nl = self.predict(self.model, input_nl, data_type='dialogue')
-                    print(f'✅ GT: {output_nl}')
-                    print(f'🤖 AI : {generated_nl}')
+                    for i in range(len(dialogues)):
+                        if i > 0:
+                            print()
+                        input_sequence = np.array([], dtype=np.int32)
+                        for j in range(max(i - 2, 0), i + 1, 1):
+                            dialogue = dialogues[j]
+                            cur_input_nl = dialogue['input']
+                            cur_output_nl = dialogue['output']
+                            cur_input_sequence = data_generator.preprocess(cur_input_nl, target='sequence', data_type='dialogue_input')
+                            cur_output_sequence = data_generator.preprocess(cur_output_nl, target='sequence', data_type='dialogue_output')
+                            if j < i:
+                                input_sequence = np.append(input_sequence, cur_input_sequence)
+                                input_sequence = np.append(input_sequence, cur_output_sequence)
+                            else:
+                                input_sequence = np.append(input_sequence, cur_input_sequence)
+                        input_nl = dialogues[i]['input']
+                        output_nl = dialogues[i]['output']
+                        print(f'👤 User : {input_nl}')
+                        generated_nl = self.predict(self.model, sequence=input_sequence, data_type='dialogue')
+                        print(f'✅ GT: {output_nl}')
+                        print(f'🤖 AI : {generated_nl}')
                     valid_type_chat_count += 1
                     if valid_type_chat_count == auto_count:
                         break
-                i += 1
-                if i == len(data_generator.json_paths) or i > 300:
-                    if i > 300:
+                inc += 1
+                if inc == len(data_generator.json_paths) or inc > 300:
+                    if inc > 300:
                         print(f'dialogue type data not found in 300 json... maybe not exists?')
                     break
         else:
             print('chat start\n')
             while True:
-                nl = input('You : ')
-                if nl == 'q':
+                input_nl = input('👤 User : ')
+                if input_nl == 'q':
                     exit(0)
-                output_nl = self.predict(self.model, nl, data_type='dialogue')
-                print(f'AI : {output_nl}\n')
+                output_nl = self.predict(self.model, nl=input_nl, data_type='dialogue')
+                print(f'🤖 AI : {output_nl}\n')
 
     def evaluate(self, dataset='train'):
         assert dataset in ['train', 'validation']
