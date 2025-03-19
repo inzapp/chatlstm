@@ -31,11 +31,13 @@ import numpy as np
 
 class Tokenizer:
     default_file_name = 'tokenizer.data'
-    def __init__(self):
+    def __init__(self, rolling_context):
+        self.rolling_context = rolling_context
         self.index_to_token_dict = {}
         self.token_to_index_dict = {}
         self.vocab_size = 0
-        self.max_sequence_length = 0
+        self.max_data_sequence_length = 0
+        self.model_input_sequence_length = 0
         self.pad_token = '<PAD>'
         self.unk_token = '<UNK>'
         self.bos_user_token = '<BOS_USER>'
@@ -43,9 +45,9 @@ class Tokenizer:
         self.eos_token = '<EOS>'
         self.bos_tokens = [self.bos_user_token, self.bos_assistant_token]
         self.special_tokens = [self.pad_token, self.unk_token] + self.bos_tokens + [self.eos_token] + ['\n']
+        self.bos_eos_token_margin = 4
         # self.morph_analyzer = konlpy.tag.Hannanum()
         self.morph_analyzer = konlpy.tag.Mecab()
-        self.bos_eos_token_margin = 16
         self.init()
         self.is_loaded = False
 
@@ -106,15 +108,15 @@ class Tokenizer:
         self.index_to_token_dict = {}
         self.token_to_index_dict = {}
         self.vocab_size = 0
-        self.max_sequence_length = 0
+        self.max_data_sequence_length = 0
         for special_token in self.special_tokens:
             self.add_token(special_token)
 
     def update(self, nl):
         nl = self.preprocess(nl)
         tokens = self.convert_nl_to_tokens(nl)
-        sequence_length = len(tokens) + self.bos_eos_token_margin
-        self.max_sequence_length = max(sequence_length, self.max_sequence_length)
+        sequence_length = len(tokens)
+        self.max_data_sequence_length = max(sequence_length, self.max_data_sequence_length)
         for token in tokens:
             self.add_token(token)
 
@@ -122,7 +124,7 @@ class Tokenizer:
         return self.morph_analyzer.morphs(nl)
 
     def convert_tokens_to_sequence(self, tokens):
-        min_length = min(len(tokens), self.max_sequence_length)
+        min_length = min(len(tokens), self.max_data_sequence_length)
         sequence = []
         for i in range(min_length):
             try:
@@ -135,8 +137,8 @@ class Tokenizer:
 
     def convert_sequence_to_padded_sequence(self, sequence, unk_dropout=0.0):
         assert 0.0 <= unk_dropout <= 1.0
-        sequence_padded = np.zeros(shape=(self.max_sequence_length,), dtype=np.int32)
-        sequence_length = min(len(sequence), self.max_sequence_length)
+        sequence_padded = np.zeros(shape=(self.model_input_sequence_length,), dtype=np.int32)
+        sequence_length = min(len(sequence), self.model_input_sequence_length)
         sequence_padded[:sequence_length] = sequence[:sequence_length]
         if unk_dropout > 0.0:
             unk_ratio = np.random.uniform() * unk_dropout
@@ -160,10 +162,18 @@ class Tokenizer:
         nl = ' '.join(tokens)
         return nl
 
+    def calculate_model_input_sequence_length(self, max_data_sequence_length):
+        ret = max_data_sequence_length * 2 + self.bos_eos_token_margin
+        if self.rolling_context >= 1:
+            ret += (max_data_sequence_length * self.rolling_context * 2)
+            ret += (2 * self.rolling_context * 2)
+        return ret
+
     def save(self, path):
         d = {}
         d['vocab_size'] = self.vocab_size
-        d['max_sequence_length'] = self.max_sequence_length
+        d['max_data_sequence_length'] = self.max_data_sequence_length
+        d['model_input_sequence_length'] = self.calculate_model_input_sequence_length(self.max_data_sequence_length)
         d['index_to_token_dict'] = self.index_to_token_dict
         d['token_to_index_dict'] = self.token_to_index_dict
         with open(path, mode='wt', encoding='utf-8') as f:
@@ -186,7 +196,8 @@ class Tokenizer:
         with open(path, mode='rt', encoding='utf-8') as f:
             d = json.load(f)
         self.vocab_size = int(d['vocab_size'])
-        self.max_sequence_length = int(d['max_sequence_length']) * 2 * 2
+        self.max_data_sequence_length = int(d['max_data_sequence_length'])
+        self.model_input_sequence_length = int(d['model_input_sequence_length'])
         self.index_to_token_dict = d['index_to_token_dict']
         self.token_to_index_dict = d['token_to_index_dict']
         self.index_to_token_dict = self.convert_keys_to_int(self.index_to_token_dict)

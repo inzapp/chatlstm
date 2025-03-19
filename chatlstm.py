@@ -101,6 +101,7 @@ class TrainingConfig:
         d['warm_up'] = float(warm_up) if 0.0 <= warm_up <= 1.0 else int(warm_up)
         d['momentum'] = self.__get_value_from_yaml(cfg, 'momentum', 0.9, float, required=False)
         d['smoothing'] = self.__get_value_from_yaml(cfg, 'smoothing', 0.0, float, required=False)
+        d['rolling_context'] = self.__get_value_from_yaml(cfg, 'rolling_context', 2, int, required=False)
         d['embedding_dim'] = self.__get_value_from_yaml(cfg, 'embedding_dim', 128, int, required=False)
         d['max_conv_filters'] = self.__get_value_from_yaml(cfg, 'max_conv_filters', 4096, int, required=False)
         d['recurrent_units'] = self.__get_value_from_yaml(cfg, 'recurrent_units', 256, int, required=False)
@@ -202,7 +203,7 @@ class ChatLSTM(CheckpointManager):
         sequence_length = len(sequence)
 
         output_nl = ''
-        max_length = self.train_data_generator.tokenizer.max_sequence_length - self.train_data_generator.tokenizer.bos_eos_token_margin - sequence_length
+        max_length = self.train_data_generator.tokenizer.model_input_sequence_length - self.train_data_generator.tokenizer.bos_eos_token_margin - sequence_length
         for i in range(max_length):
             y = self.graph_forward(model, x)
             index, token, end = self.train_data_generator.postprocess(np.array(y[0]))
@@ -246,7 +247,7 @@ class ChatLSTM(CheckpointManager):
                         if i > 0:
                             print()
                         input_sequence = np.array([], dtype=np.int32)
-                        for j in range(max(i - 2, 0), i + 1, 1):
+                        for j in range(max(i - self.cfg.rolling_context, 0), i + 1, 1):
                             dialogue = dialogues[j]
                             cur_input_nl = dialogue['input']
                             cur_output_nl = dialogue['output']
@@ -311,11 +312,11 @@ class ChatLSTM(CheckpointManager):
         self.train_data_generator.load_tokenizer()
         self.validation_data_generator.load_tokenizer()
         if self.model is None:
-            data_max_sequence_length = self.train_data_generator.tokenizer.max_sequence_length
+            model_input_sequence_length = self.train_data_generator.tokenizer.model_input_sequence_length
             data_vocab_size = self.train_data_generator.tokenizer.vocab_size
             self.model = Model(
                 cfg=self.cfg,
-                max_sequence_length=data_max_sequence_length,
+                model_input_sequence_length=model_input_sequence_length,
                 vocab_size=data_vocab_size).build()
 
         self.compile(self.model)
@@ -324,7 +325,8 @@ class ChatLSTM(CheckpointManager):
         self.cfg.print_cfg()
         print()
         print(f'vocab size : {self.train_data_generator.tokenizer.vocab_size}')
-        print(f'max sequence length : {self.train_data_generator.tokenizer.max_sequence_length}')
+        print(f'max data sequence length : {self.train_data_generator.tokenizer.max_data_sequence_length}')
+        print(f'model input sequence length : {self.train_data_generator.tokenizer.model_input_sequence_length}')
         print(f'train on {len(self.train_data_generator.json_paths)} samples\n')
         self.train_data_generator.start()
         if self.cfg.pretrained_model_path is not None:

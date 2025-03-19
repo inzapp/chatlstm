@@ -46,7 +46,7 @@ class DataGenerator:
         self.training = training
         self.pretrained_model_output_size = pretrained_model_output_size
         self.pretrained_vocab_size = pretrained_vocab_size
-        self.tokenizer = Tokenizer()
+        self.tokenizer = Tokenizer(rolling_context=self.cfg.rolling_context)
         self.pool = ThreadPoolExecutor(8)
         self.json_paths = self.get_json_paths(self.data_path)
         self.json_index = 0
@@ -235,7 +235,7 @@ class DataGenerator:
             dialogue_index = np.random.randint(len(dialogues))
             input_sequence = np.array([], dtype=np.int32)
             output_sequence = np.array([], dtype=np.int32)
-            for i in range(max(dialogue_index - 2, 0), dialogue_index + 1, 1):
+            for i in range(max(dialogue_index - self.cfg.rolling_context, 0), dialogue_index + 1, 1):
                 dialogue = dialogues[i]
                 cur_input_nl = dialogue['input']
                 cur_output_nl = dialogue['output']
@@ -260,7 +260,7 @@ class DataGenerator:
         x, y = None, None
         if x_sequence is not None and y_index is not None:
             x = self.tokenizer.convert_sequence_to_padded_sequence(x_sequence, unk_dropout=self.cfg.unk_dropout if self.training else 0.0)
-            x = np.asarray(x).reshape((self.tokenizer.max_sequence_length,)).astype(np.int32)
+            x = np.asarray(x).reshape((self.tokenizer.model_input_sequence_length,)).astype(np.int32)
             y = int(y_index)
         return x, y
 
@@ -366,7 +366,7 @@ class DataGenerator:
 
         # data_vocab_size = self.tokenizer.vocab_size
         # data_model_output_size = data_vocab_size + self.tokenizer.bos_eos_token_margin
-        # data_max_sequence_length = self.tokenizer.max_sequence_length
+        # data_max_sequence_length = self.tokenizer.max_data_sequence_length
         # if self.training:
         #     if self.pretrained_vocab_size > 0 or self.pretrained_model_output_size > 0:
         #         msg = f'pretrained_vocab_size({self.pretrained_vocab_size}) must be equal to data_vocab_size({data_vocab_size})'
@@ -382,7 +382,7 @@ class DataGenerator:
                 x, y = self.q[i]
                 batch_x.append(x)
                 batch_y.append(y)
-        batch_x = np.asarray(batch_x).reshape((self.cfg.batch_size, self.tokenizer.max_sequence_length)).astype(np.int32)
+        batch_x = np.asarray(batch_x).reshape((self.cfg.batch_size, self.tokenizer.model_input_sequence_length)).astype(np.int32)
         batch_y = np.asarray(batch_y).reshape((self.cfg.batch_size, 1)).astype(np.int32)
         return batch_x, batch_y
 
