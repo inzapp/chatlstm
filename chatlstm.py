@@ -243,10 +243,10 @@ class ChatLSTM(CheckpointManager):
                     dialogue = dialogues[0]
                     input_nl = dialogue['input']
                     output_nl = dialogue['output']
-                    print(f'You : {input_nl}')
+                    print(f'👤 User : {input_nl}')
                     generated_nl = self.predict(self.model, input_nl, data_type='dialogue')
-                    print(f'GT : {output_nl}')
-                    print(f'AI : {generated_nl}')
+                    print(f'✅ GT: {output_nl}')
+                    print(f'🤖 AI : {generated_nl}')
                     valid_type_chat_count += 1
                     if valid_type_chat_count == auto_count:
                         break
