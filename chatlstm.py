@@ -68,7 +68,8 @@ class TrainingConfig:
             return value
         except:
             if required:
-                Logger.error(f'cfg parse failure, {key} is required')
+                print(f'cfg parse failure, {key} is required')
+                exit(0)
             return default
 
     def set_config(self, key, value):
