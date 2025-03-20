@@ -82,6 +82,11 @@ class Model:
             kernel_regularizer=self.kernel_regularizer(),
             recurrent_regularizer=self.kernel_regularizer(),
             return_sequences=True)(x)
+        x = tf.keras.layers.LSTM(
+            units=self.cfg.recurrent_units,
+            kernel_regularizer=self.kernel_regularizer(),
+            recurrent_regularizer=self.kernel_regularizer(),
+            return_sequences=True)(x)
         x = tf.keras.layers.LSTM(units=64,
             kernel_regularizer=self.kernel_regularizer(),
             recurrent_regularizer=self.kernel_regularizer(),
@@ -89,6 +94,11 @@ class Model:
         return x
 
     def gru(self, x, units):
+        x = tf.keras.layers.GRU(
+            units=self.cfg.recurrent_units,
+            kernel_regularizer=self.kernel_regularizer(),
+            recurrent_regularizer=self.kernel_regularizer(),
+            return_sequences=True)(x)
         x = tf.keras.layers.GRU(
             units=self.cfg.recurrent_units,
             kernel_regularizer=self.kernel_regularizer(),
