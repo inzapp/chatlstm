@@ -59,8 +59,12 @@ class Model:
         x = self.conv1d(x, self.cfg.recurrent_units, 1, 1, activation='leaky')
         if self.cfg.use_gru:
             x = self.gru(x, units=self.cfg.recurrent_units)
+            x = self.gru(x, units=self.cfg.recurrent_units)
+            x = self.gru(x, units=self.cfg.reduced_recurrent_units)
         else:
             x = self.lstm(x, units=self.cfg.recurrent_units)
+            x = self.lstm(x, units=self.cfg.recurrent_units)
+            x = self.lstm(x, units=self.cfg.reduced_recurrent_units)
         x = tf.keras.layers.Flatten()(x)
         output_layer = self.output_layer(x)
         model = tf.keras.models.Model(input_layer, output_layer)
@@ -78,16 +82,7 @@ class Model:
 
     def lstm(self, x, units):
         x = tf.keras.layers.LSTM(
-            units=self.cfg.recurrent_units,
-            kernel_regularizer=self.kernel_regularizer(),
-            recurrent_regularizer=self.kernel_regularizer(),
-            return_sequences=True)(x)
-        x = tf.keras.layers.LSTM(
-            units=self.cfg.recurrent_units,
-            kernel_regularizer=self.kernel_regularizer(),
-            recurrent_regularizer=self.kernel_regularizer(),
-            return_sequences=True)(x)
-        x = tf.keras.layers.LSTM(units=64,
+            units=units,
             kernel_regularizer=self.kernel_regularizer(),
             recurrent_regularizer=self.kernel_regularizer(),
             return_sequences=True)(x)
@@ -95,16 +90,7 @@ class Model:
 
     def gru(self, x, units):
         x = tf.keras.layers.GRU(
-            units=self.cfg.recurrent_units,
-            kernel_regularizer=self.kernel_regularizer(),
-            recurrent_regularizer=self.kernel_regularizer(),
-            return_sequences=True)(x)
-        x = tf.keras.layers.GRU(
-            units=self.cfg.recurrent_units,
-            kernel_regularizer=self.kernel_regularizer(),
-            recurrent_regularizer=self.kernel_regularizer(),
-            return_sequences=True)(x)
-        x = tf.keras.layers.GRU(units=64,
+            units=units,
             kernel_regularizer=self.kernel_regularizer(),
             recurrent_regularizer=self.kernel_regularizer(),
             return_sequences=True)(x)

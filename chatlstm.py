@@ -96,6 +96,7 @@ class TrainingConfig:
         d['lr'] = self.__get_value_from_yaml(cfg, 'lr', 0.001, float, required=False)
         d['lrf'] = self.__get_value_from_yaml(cfg, 'lrf', 0.05, float, required=False)
         d['l2'] = self.__get_value_from_yaml(cfg, 'l2', 0.0005, float, required=False)
+        d['clipnorm'] = self.__get_value_from_yaml(cfg, 'clipnorm', 1.0, float, required=False)
         d['dropout'] = self.__get_value_from_yaml(cfg, 'dropout', 0.0, float, required=False)
         d['unk_dropout'] = self.__get_value_from_yaml(cfg, 'unk_dropout', 0.0, float, required=False)
         warm_up = self.__get_value_from_yaml(cfg, 'warm_up', 1000, float, required=False)
@@ -106,6 +107,7 @@ class TrainingConfig:
         d['embedding_dim'] = self.__get_value_from_yaml(cfg, 'embedding_dim', 128, int, required=False)
         d['max_conv_filters'] = self.__get_value_from_yaml(cfg, 'max_conv_filters', 4096, int, required=False)
         d['recurrent_units'] = self.__get_value_from_yaml(cfg, 'recurrent_units', 256, int, required=False)
+        d['reduced_recurrent_units'] = self.__get_value_from_yaml(cfg, 'reduced_recurrent_units', 64, int, required=False)
         d['batch_size'] = self.__get_value_from_yaml(cfg, 'batch_size', 4, int, required=False)
         d['max_q_size'] = self.__get_value_from_yaml(cfg, 'max_q_size', 1024, int, required=False)
         d['iterations'] = self.__get_value_from_yaml(cfg, 'iterations', None, int, required=True)
@@ -161,8 +163,9 @@ class ChatLSTM(CheckpointManager):
             pretrained_model_output_size=self.pretrained_model_output_size,
             pretrained_vocab_size=self.pretrained_vocab_size)
 
+        clipnorm = self.cfg.clipnorm if self.cfg.clipnorm > 0.0 else None
         if self.cfg.optimizer == 'adam':
-            self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.cfg.lr, beta_1=self.cfg.momentum)
+            self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.cfg.lr, beta_1=self.cfg.momentum, clipnorm=clipnorm)
         elif self.cfg.optimizer == 'rmsprop':
             self.optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.cfg.lr)
         self.loss_fn = tf.keras.losses.SparseCategoricalCrossentropy()
