@@ -48,7 +48,7 @@ class Model:
         x = tf.keras.layers.Embedding(input_dim=self.vocab_size, output_dim=self.cfg.embedding_dim)(x)
         conv_filters = self.cfg.embedding_dim * 2
         sequence_length = self.model_input_sequence_length
-        for _ in range(max(5, self.min_division_step(self.model_input_sequence_length, self.sequence_downscaling_target))):
+        for _ in range(max(1, self.min_division_step(self.model_input_sequence_length, self.sequence_downscaling_target))):
             if sequence_length <= self.sequence_downscaling_target:
                 strides = 1
             else:
@@ -57,6 +57,7 @@ class Model:
             x = self.conv1d(x, conv_filters, 5, strides, activation='leaky')
             conv_filters = min(conv_filters * 2, self.cfg.max_conv_filters)
         x = self.conv1d(x, self.cfg.recurrent_units, 1, 1, activation='leaky')
+        x = self.multi_head_attention(x, num_heads=4, key_dim=self.cfg.recurrent_units)
         if self.cfg.use_gru:
             x = self.gru(x, units=self.cfg.recurrent_units)
             x = self.gru(x, units=self.cfg.recurrent_units)
@@ -69,6 +70,9 @@ class Model:
         output_layer = self.output_layer(x)
         model = tf.keras.models.Model(input_layer, output_layer)
         return model
+
+    def ln(self, x):
+        return tf.keras.layers.LayerNormalization()(x)
 
     def conv1d(self, x, filters, kernel_size, strides, activation='leaky'):
         x = tf.keras.layers.Conv1D(
@@ -94,6 +98,12 @@ class Model:
             kernel_regularizer=self.kernel_regularizer(),
             recurrent_regularizer=self.kernel_regularizer(),
             return_sequences=True)(x)
+        return x
+
+    def multi_head_attention(self, x, num_heads, key_dim, dropout=0.0):
+        x_attention = tf.keras.layers.MultiHeadAttention(num_heads=num_heads, key_dim=key_dim, dropout=dropout)(x, x)
+        x = tf.keras.layers.Add()([x_attention, x])
+        x = self.ln(x)
         return x
 
     def output_layer(self, x):
