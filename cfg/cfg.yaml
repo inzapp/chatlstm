@@ -19,7 +19,7 @@ rolling_context: 2
 embedding_dim: 128
 max_conv_filters: 4096
 recurrent_units: 1024
-reduced_recurrent_units: 64
+last_recurrent_units: 64
 batch_size: 64
 max_q_size: 4096
 iterations: 10000

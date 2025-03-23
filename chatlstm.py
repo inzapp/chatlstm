@@ -107,7 +107,7 @@ class TrainingConfig:
         d['embedding_dim'] = self.__get_value_from_yaml(cfg, 'embedding_dim', 128, int, required=False)
         d['max_conv_filters'] = self.__get_value_from_yaml(cfg, 'max_conv_filters', 4096, int, required=False)
         d['recurrent_units'] = self.__get_value_from_yaml(cfg, 'recurrent_units', 256, int, required=False)
-        d['reduced_recurrent_units'] = self.__get_value_from_yaml(cfg, 'reduced_recurrent_units', 64, int, required=False)
+        d['last_recurrent_units'] = self.__get_value_from_yaml(cfg, 'last_recurrent_units', 64, int, required=False)
         d['batch_size'] = self.__get_value_from_yaml(cfg, 'batch_size', 4, int, required=False)
         d['max_q_size'] = self.__get_value_from_yaml(cfg, 'max_q_size', 1024, int, required=False)
         d['iterations'] = self.__get_value_from_yaml(cfg, 'iterations', None, int, required=True)

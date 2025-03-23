@@ -60,11 +60,11 @@ class Model:
         if self.cfg.use_gru:
             x = self.gru(x, units=self.cfg.recurrent_units)
             x = self.gru(x, units=self.cfg.recurrent_units)
-            x = self.gru(x, units=self.cfg.reduced_recurrent_units)
+            x = self.gru(x, units=self.cfg.last_recurrent_units)
         else:
             x = self.lstm(x, units=self.cfg.recurrent_units)
             x = self.lstm(x, units=self.cfg.recurrent_units)
-            x = self.lstm(x, units=self.cfg.reduced_recurrent_units)
+            x = self.lstm(x, units=self.cfg.last_recurrent_units)
         x = tf.keras.layers.Flatten()(x)
         output_layer = self.output_layer(x)
         model = tf.keras.models.Model(input_layer, output_layer)
