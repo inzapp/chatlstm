@@ -57,7 +57,6 @@ class Model:
             x = self.conv1d(x, conv_filters, 5, strides, activation='leaky')
             conv_filters = min(conv_filters * 2, self.cfg.max_conv_filters)
         x = self.conv1d(x, self.cfg.recurrent_units, 1, 1, activation='leaky')
-        x = self.multi_head_attention(x, num_heads=4, key_dim=self.cfg.recurrent_units)
         if self.cfg.use_gru:
             x = self.gru(x, units=self.cfg.recurrent_units)
             x = self.gru(x, units=self.cfg.recurrent_units)
@@ -66,6 +65,7 @@ class Model:
             x = self.lstm(x, units=self.cfg.recurrent_units)
             x = self.lstm(x, units=self.cfg.recurrent_units)
             x = self.lstm(x, units=self.cfg.last_recurrent_units)
+        x = self.multi_head_attention(x, num_heads=8, key_dim=self.cfg.last_recurrent_units)
         x = tf.keras.layers.Flatten()(x)
         output_layer = self.output_layer(x)
         model = tf.keras.models.Model(input_layer, output_layer)
