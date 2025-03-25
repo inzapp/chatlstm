@@ -192,7 +192,7 @@ class ChatLSTM(CheckpointManager):
     def graph_forward(model, x):
         return model(x, training=False)
 
-    def predict(self, model, data_type, nl=None, sequence=None):
+    def predict(self, model, data_type, stream, nl=None, sequence=None):
         assert data_type in ['text', 'dialogue']
         if data_type == 'text':
             if nl is not None:
@@ -213,10 +213,15 @@ class ChatLSTM(CheckpointManager):
             index, token, end = self.train_data_generator.postprocess(np.array(y[0]))
             if end:
                 break
+            cur_token = ''
             if i == 0:
-                output_nl = f'{token}'
+                cur_token = token
             else:
-                output_nl += f' {token}'
+                cur_token = f' {token}'
+            if stream:
+                print(cur_token, end='', flush=True)
+            else:
+                output_nl += cur_token
             x[0][sequence_length+i] = index
         return output_nl
 
@@ -229,7 +234,7 @@ class ChatLSTM(CheckpointManager):
         vocab_size = model.output_shape[-1]
         return output_size, vocab_size
 
-    def chat(self, auto=False, auto_count=10, dataset='train'):
+    def chat(self, auto=False, auto_count=10, dataset='train', stream=True):
         assert dataset in ['train', 'validation']
         self.train_data_generator.load_tokenizer()
         if auto:
@@ -265,9 +270,13 @@ class ChatLSTM(CheckpointManager):
                         input_nl = dialogues[i]['input']
                         output_nl = dialogues[i]['output']
                         print(f'👤 User : {input_nl}')
-                        generated_nl = self.predict(self.model, sequence=input_sequence, data_type='dialogue')
                         print(f'✅ GT: {output_nl}')
-                        print(f'🤖 AI : {generated_nl}')
+                        print('🤖 AI : ', end='', flush=True)
+                        generated_nl = self.predict(self.model, sequence=input_sequence, data_type='dialogue', stream=stream)
+                        if stream:
+                            print()
+                        else:
+                            print(generated_nl)
                     valid_type_chat_count += 1
                     if valid_type_chat_count == auto_count:
                         break
@@ -282,8 +291,12 @@ class ChatLSTM(CheckpointManager):
                 input_nl = input('👤 User : ')
                 if input_nl == 'q':
                     exit(0)
-                output_nl = self.predict(self.model, nl=input_nl, data_type='dialogue')
-                print(f'🤖 AI : {output_nl}\n')
+                print('🤖 AI : ', end='', flush=True)
+                generated_nl = self.predict(self.model, nl=input_nl, data_type='dialogue', stream=stream)
+                if stream:
+                    print()
+                else:
+                    print(generated_nl)
 
     def evaluate(self, dataset='train'):
         assert dataset in ['train', 'validation']
